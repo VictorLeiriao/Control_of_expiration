@@ -123,6 +123,7 @@ export interface NotificationChannel {
 
 export interface DashboardSummary {
   expiredCount: number;
+  normalCount: number;
   expiring7Days: number;
   expiring30Days: number;
   riskValue: number;

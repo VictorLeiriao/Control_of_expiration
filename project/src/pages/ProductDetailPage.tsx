@@ -13,7 +13,7 @@ import { LotEditor } from '@/components/features/LotEditor';
 import { Modal } from '@/components/ui/Modal';
 import { ArrowLeft, Package, Tag, Calendar, Layers, DollarSign, Zap, Plus } from 'lucide-react';
 
-export function ProductDetailPage() {
+export function ProductDetailPage({ onLotsChanged }: { onLotsChanged?: () => void }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(null);
@@ -56,6 +56,7 @@ export function ProductDetailPage() {
       setLots((current) => current.filter((lot) => lot.id !== deleting.id));
       setNotice('Lote excluído com sucesso.');
       setDeleting(null);
+      onLotsChanged?.();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Não foi possível excluir o lote.');
     } finally {
@@ -236,6 +237,7 @@ export function ProductDetailPage() {
             setLots((current) => editor.lot ? current.map((item) => item.id === lot.id ? lot : item) : [...current, lot]);
             setNotice(editor.lot ? 'Lote atualizado com sucesso.' : 'Lote adicionado com sucesso.');
             setEditor(null);
+            onLotsChanged?.();
           }}
         />
       )}

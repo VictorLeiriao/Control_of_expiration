@@ -1,4 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { ProductsPage } from '@/pages/ProductsPage';
+import { ProductDetailPage } from '@/pages/ProductDetailPage';
+import { NewProductPage } from '@/pages/NewProductPage';
+import { ExpirationsPage } from '@/pages/ExpirationsPage';
+import { EntriesPage } from '@/pages/EntriesPage';
+import { NewEntryPage } from '@/pages/NewEntryPage';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { dashboardService } from '@/services';
+import { formatDate, formatNumber } from '@/utils/format';
+import type { CriticalProduct } from '@/types';
 import {
   LayoutDashboard,
   Package,
@@ -7,13 +18,11 @@ import {
   Bell,
   Settings,
   Menu,
-  X,
-  Search,
   Plus,
+  X,
   AlertTriangle,
   AlertCircle,
   CheckCircle2,
-  TrendingDown,
   ChevronRight,
 } from 'lucide-react';
 
@@ -58,47 +67,38 @@ const navigation = [
   },
 ];
 
-const products = [
-  {
-    name: 'Leite Integral 1L',
-    category: 'Laticínios',
-    quantity: 24,
-    expiration: '08/09/2026',
-    status: 'critical',
-  },
-  {
-    name: 'Iogurte Natural',
-    category: 'Laticínios',
-    quantity: 18,
-    expiration: '11/09/2026',
-    status: 'warning',
-  },
-  {
-    name: 'Arroz 5kg',
-    category: 'Mercearia',
-    quantity: 42,
-    expiration: '15/12/2026',
-    status: 'normal',
-  },
-  {
-    name: 'Molho de Tomate',
-    category: 'Mercearia',
-    quantity: 31,
-    expiration: '22/10/2026',
-    status: 'normal',
-  },
-];
+const paths: Record<Page, string> = {
+  dashboard: '/',
+  products: '/products',
+  expiration: '/expirations',
+  promotions: '/promotions',
+  notifications: '/notifications',
+  settings: '/settings',
+};
+
+type DashboardData = Awaited<ReturnType<typeof dashboardService.getDashboard>>;
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [inventoryRevision, setInventoryRevision] = useState(0);
+  const currentNavigation = navigation.find(({ id }) => {
+    const path = paths[id];
+    return pathname === path || (path !== '/' && pathname.startsWith(path + '/'));
+  });
 
-  const currentNavigation = navigation.find(
-    (item) => item.id === currentPage
-  );
+  useEffect(() => {
+    let active = true;
+    dashboardService.getDashboard().then((data) => {
+      if (active) setDashboard(data);
+    });
+    return () => { active = false; };
+  }, [pathname, inventoryRevision]);
 
   const handleNavigation = (page: Page) => {
-    setCurrentPage(page);
+    navigate(paths[page]);
     setSidebarOpen(false);
   };
 
@@ -161,7 +161,7 @@ function App() {
 
           {navigation.map((item) => {
             const Icon = item.icon;
-            const active = currentPage === item.id;
+            const active = currentNavigation?.id === item.id;
 
             return (
               <button
@@ -181,9 +181,9 @@ function App() {
                 <Icon size={19} />
                 <span>{item.label}</span>
 
-                {item.id === 'expiration' && (
+                {item.id === 'expiration' && Boolean(dashboard?.summary.expiring7Days) && (
                   <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-error-100 px-1.5 text-xs font-semibold text-error-700">
-                    2
+                    {dashboard?.summary.expiring7Days}
                   </span>
                 )}
               </button>
@@ -226,7 +226,7 @@ function App() {
 
             <div>
               <h1 className="text-lg font-semibold text-ink-900">
-                {currentNavigation?.label}
+                {currentNavigation?.label ?? 'Entradas'}
               </h1>
 
               <p className="hidden text-xs text-ink-500 sm:block">
@@ -258,29 +258,32 @@ function App() {
           </div>
         </header>
 
-        <main className="p-4 sm:p-6 lg:p-8">
-          {currentPage === 'dashboard' && (
-            <Dashboard
-              onNavigate={handleNavigation}
-            />
-          )}
-
-          {currentPage === 'products' && <ProductsPage />}
-
-          {currentPage === 'expiration' && <ExpirationPage />}
-
-          {currentPage === 'promotions' && <PromotionsPage />}
-
-          {currentPage === 'notifications' && <NotificationsPage />}
-
-          {currentPage === 'settings' && <SettingsPage />}
+        <main className={currentNavigation?.id === 'dashboard' || ['promotions', 'notifications', 'settings'].includes(currentNavigation?.id ?? '') ? 'p-4 sm:p-6 lg:p-8' : ''}>
+          <Routes>
+            <Route index element={dashboard ? <Dashboard data={dashboard} /> : <LoadingState />} />
+            <Route path="products" element={<ProductsPage />} />
+            <Route path="products/new" element={<NewProductPage />} />
+            <Route path="products/:id" element={<ProductDetailPage onLotsChanged={() => setInventoryRevision((value) => value + 1)} />} />
+            <Route path="expirations" element={<ExpirationsPage />} />
+            <Route path="entries" element={<EntriesPage />} />
+            <Route path="entries/new" element={<NewEntryPage />} />
+            <Route path="promotions" element={<PromotionsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
     </div>
   );
 }
 
-function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
+function Dashboard({ data }: { data: DashboardData }) {
+  const navigate = useNavigate();
+  const { summary, criticalProducts, alerts } = data;
+  const expiring = summary.expiring7Days + summary.expiring30Days;
+  const controlledLots = summary.normalCount + summary.expiredCount + expiring;
+  const healthy = controlledLots > 0 ? Math.round(100 * summary.normalCount / controlledLots) : null;
   return (
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
       {/* Welcome */}
@@ -300,31 +303,31 @@ function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total de produtos"
-          value="248"
+          value={formatNumber(summary.totalProducts)}
           description="Produtos cadastrados"
           icon={Package}
         />
 
         <StatCard
           title="Próximos do vencimento"
-          value="18"
-          description="Nos próximos 30 dias"
+          value={formatNumber(expiring)}
+          description="Lotes com saldo nos próximos 30 dias"
           icon={Clock3}
           variant="warning"
         />
 
         <StatCard
           title="Vencidos"
-          value="4"
-          description="Precisam de atenção"
+          value={formatNumber(summary.expiredCount)}
+          description="Lotes vencidos com saldo"
           icon={AlertCircle}
           variant="error"
         />
 
         <StatCard
           title="Estoque saudável"
-          value="91%"
-          description="Produtos dentro da validade"
+          value={healthy === null ? '—' : `${healthy}%`}
+          description="Lotes com saldo e mais de 30 dias de validade"
           icon={CheckCircle2}
           variant="success"
         />
@@ -344,15 +347,14 @@ function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
               </h3>
 
               <p className="mt-1 text-sm text-warning-800">
-                Existem <strong>2 produtos</strong> vencendo nos próximos
-                7 dias.
+                {alerts[0].message}
               </p>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={() => onNavigate('expiration')}
+            onClick={() => navigate(alerts[0].actionLink)}
             className="btn-secondary whitespace-nowrap"
           >
             Ver vencimentos
@@ -376,7 +378,7 @@ function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
 
           <button
             type="button"
-            onClick={() => onNavigate('expiration')}
+            onClick={() => navigate(alerts[1].actionLink)}
             className="btn-ghost"
           >
             Ver todos
@@ -384,7 +386,7 @@ function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
           </button>
         </div>
 
-        <ProductTable />
+        <ProductTable items={criticalProducts} />
       </section>
     </div>
   );
@@ -432,7 +434,9 @@ function StatCard({
   );
 }
 
-function ProductTable() {
+function ProductTable({ items }: { items: CriticalProduct[] }) {
+  if (items.length === 0) return <p className="p-5 text-sm text-ink-500">Nenhum produto próximo do vencimento.</p>;
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[650px] text-left text-sm">
@@ -447,10 +451,11 @@ function ProductTable() {
         </thead>
 
         <tbody className="divide-y divide-ink-100">
-          {products.map((product) => (
-            <tr key={product.name} className="hover:bg-ink-50">
+          {items.map(({ product, lot, status }) => (
+            <tr key={product.id} className="hover:bg-ink-50">
               <td className="px-5 py-4 font-medium text-ink-900">
-                {product.name}
+                <Link className="hover:underline" to={`/products/${product.id}`}>{product.name}</Link>
+                <p className="text-xs text-ink-500">Lote {lot.lotNumber}</p>
               </td>
 
               <td className="px-5 py-4 text-ink-600">
@@ -458,15 +463,15 @@ function ProductTable() {
               </td>
 
               <td className="px-5 py-4 text-ink-600">
-                {product.quantity} un.
+                {formatNumber(lot.currentQuantity)} {product.unit}
               </td>
 
               <td className="px-5 py-4 font-medium text-ink-700">
-                {product.expiration}
+                {formatDate(lot.expirationDate)}
               </td>
 
               <td className="px-5 py-4">
-                <StatusBadge status={product.status} />
+                <StatusBadge status={status} />
               </td>
             </tr>
           ))}
@@ -499,112 +504,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`badge ${current.className}`}>
       {current.label}
     </span>
-  );
-}
-
-function ProductsPage() {
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
-      <PageHeader
-        title="Produtos"
-        description="Gerencie os produtos cadastrados no seu estoque."
-        action={
-          <button type="button" className="btn-primary">
-            <Plus size={18} />
-            Novo produto
-          </button>
-        }
-      />
-
-      <div className="card p-4">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"
-            />
-
-            <input
-              className="input-field pl-10"
-              placeholder="Buscar produto..."
-            />
-          </div>
-
-          <button type="button" className="btn-secondary">
-            Todas as categorias
-          </button>
-        </div>
-      </div>
-
-      <div className="card p-8 text-center">
-        <Package
-          size={42}
-          className="mx-auto text-ink-300"
-        />
-
-        <h3 className="mt-4 font-semibold text-ink-800">
-          Área de produtos
-        </h3>
-
-        <p className="mx-auto mt-2 max-w-md text-sm text-ink-500">
-          A estrutura da tela já está preparada. A próxima etapa será
-          conectar o cadastro e gerenciamento dos produtos ao backend.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function ExpirationPage() {
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
-      <PageHeader
-        title="Vencimentos"
-        description="Acompanhe os lotes e produtos que estão próximos da validade."
-      />
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          title="Vencidos"
-          value="4"
-          description="Precisam de ação imediata"
-          icon={AlertCircle}
-          variant="error"
-        />
-
-        <StatCard
-          title="Próximos 7 dias"
-          value="2"
-          description="Prioridade máxima"
-          icon={AlertTriangle}
-          variant="warning"
-        />
-
-        <StatCard
-          title="Próximos 30 dias"
-          value="18"
-          description="Planeje a saída"
-          icon={Clock3}
-          variant="warning"
-        />
-      </div>
-
-      <div className="card p-8 text-center">
-        <Clock3
-          size={42}
-          className="mx-auto text-ink-300"
-        />
-
-        <h3 className="mt-4 font-semibold text-ink-800">
-          Controle de validade
-        </h3>
-
-        <p className="mx-auto mt-2 max-w-md text-sm text-ink-500">
-          Aqui teremos o controle por lote, datas de validade e
-          priorização FEFO — First Expire, First Out.
-        </p>
-      </div>
-    </div>
   );
 }
 

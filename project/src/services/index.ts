@@ -247,6 +247,7 @@ export const dashboardService = {
 
     const summary: DashboardSummary = {
       expiredCount,
+      normalCount: activeLots.filter((item) => item.status === 'normal').length,
       expiring7Days,
       expiring30Days,
       riskValue,
@@ -260,7 +261,9 @@ export const dashboardService = {
         id: 'alert-1',
         level: 'critical',
         title: 'ATENÇÃO',
-        message: `${expiring7Days} lotes vencem nos próximos 7 dias.`,
+        message: expiring7Days === 1
+          ? '1 lote vence nos próximos 7 dias.'
+          : `${expiring7Days} lotes vencem nos próximos 7 dias.`,
         actionLabel: 'Ver produtos',
         actionLink: '/expirations?status=critical&stock=available',
         dismissed: false,
