@@ -12,7 +12,6 @@ import {
   Settings,
   Bell,
   LogOut,
-  User as UserIcon,
   Menu,
   X,
   Boxes,

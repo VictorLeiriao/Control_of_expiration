@@ -1,69 +1,71 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productService, lotService } from '@/services';
-import type { ProductWithStock, ProductLot } from '@/types';
+import { useManagementCapabilities } from '@/hooks/useManagementCapabilities';
+import { useInventoryOverview, useInventoryScope } from '@/hooks/useInventory';
+import type { ExpirationItem } from '@/services/inventory';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatDate, getExpirationStatus } from '@/utils/format';
-import { getNextExpiration } from '@/utils/lots';
+import { formatDate, formatNumber } from '@/utils/format';
 import { Plus, Package, Eye, ScanLine, ChevronRight } from 'lucide-react';
 import { BarcodeScannerModal } from '@/components/features/BarcodeScannerModal';
 
 export function ProductsPage() {
   const navigate = useNavigate();
-  const [products, setProducts] = useState<ProductWithStock[]>([]);
-  const [lots, setLots] = useState<ProductLot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { token } = useInventoryScope();
+  const canEditCatalog = useManagementCapabilities(token)?.inventoryCatalogWrite;
+  const { data, error, reload } = useInventoryOverview();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [scannerOpen, setScannerOpen] = useState(false);
 
-  useEffect(() => {
-    Promise.all([productService.getProducts(), lotService.getLots()]).then(([p, l]) => {
-      setProducts(p);
-      setLots(l);
-      setLoading(false);
-    });
-  }, []);
+  if (error) return <div className="p-6"><p role="alert" className="text-error-700">{error}</p><button className="btn-secondary mt-3" onClick={reload}>Tentar novamente</button></div>;
+  if (!data) return <LoadingState />;
 
-  const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
-
-  function getProductLots(productId: string): ProductLot[] {
-    return lots.filter((l) => l.productId === productId);
+  const categories = ['all', ...Array.from(new Set(data.products.flatMap((product) => product.category ? [product.category] : [])))];
+  const itemsByProduct = new Map<string, ExpirationItem[]>();
+  for (const item of data.items) {
+    const items = itemsByProduct.get(item.product.id);
+    if (items) items.push(item);
+    else itemsByProduct.set(item.product.id, [item]);
   }
-
-  function getProductStatus(productId: string) {
-    return getExpirationStatus(getNextExpiration(getProductLots(productId)));
-  }
+  const products = data.products.map((product) => {
+    const items = itemsByProduct.get(product.id) ?? [];
+    const next = items.find(({ lot }) => lot.quantity > 0 && lot.expirationDate);
+    return {
+      ...product,
+      nextExp: next?.lot.expirationDate ?? undefined,
+      status: next?.status ?? 'uncontrolled' as const,
+      lotCount: items.length,
+      totalStock: items.reduce((total, { lot }) => total + lot.quantity, 0),
+    };
+  });
 
   const filtered = products.filter((p) => {
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.barcode.includes(search)) return false;
+    const query = search.trim().toLocaleLowerCase('pt-BR');
+    if (query && ![p.name, p.sku, p.barcode].some((value) => value?.toLocaleLowerCase('pt-BR').includes(query))) return false;
     if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
     if (statusFilter !== 'all') {
-      const status = getProductStatus(p.id);
-      if (status !== statusFilter) return false;
+      if (p.status !== statusFilter) return false;
     }
     return true;
   });
-
-  if (loading) return <LoadingState />;
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
       <PageHeader title="Produtos" description="Gerencie seus produtos e lotes">
         <button onClick={() => setScannerOpen(true)} className="btn-secondary">
           <ScanLine className="w-4 h-4" />
-          Escanear código
+          Buscar por código
         </button>
-        <button onClick={() => navigate('/products/new')} className="btn-primary">
+        {canEditCatalog && <button onClick={() => navigate('/products/new')} className="btn-primary">
           <Plus className="w-4 h-4" />
           Novo produto
-        </button>
+        </button>}
       </PageHeader>
 
       {/* Filters */}
@@ -93,10 +95,10 @@ export function ProductsPage() {
       {filtered.length === 0 ? (
         <EmptyState
           icon={Package}
-          title="Você ainda não possui produtos cadastrados."
+          title={products.length ? "Nenhum produto encontrado." : "Você ainda não possui produtos cadastrados."}
           description="Cadastre seu primeiro produto para começar a controlar validades."
-          actionLabel="+ Cadastrar primeiro produto"
-          onAction={() => navigate('/products/new')}
+          actionLabel={canEditCatalog ? '+ Cadastrar primeiro produto' : undefined}
+          onAction={canEditCatalog ? () => navigate('/products/new') : undefined}
         />
       ) : (
         <div className="card overflow-hidden">
@@ -117,15 +119,13 @@ export function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {filtered.map((p) => {
-                  const nextExp = getNextExpiration(getProductLots(p.id));
-                  const status = getProductStatus(p.id);
-                  const lotCount = getProductLots(p.id).length;
+                  const { nextExp, status, lotCount } = p;
                   return (
                     <tr key={p.id} className="hover:bg-ink-50/50 transition-colors cursor-pointer" onClick={() => navigate(`/products/${p.id}`)}>
                       <td className="px-5 py-3 font-medium text-ink-800">{p.name}</td>
-                      <td className="px-5 py-3 text-ink-500 font-mono text-xs">{p.barcode}</td>
+                      <td className="px-5 py-3 text-ink-500 font-mono text-xs">{p.barcode ?? p.sku}</td>
                       <td className="px-5 py-3 text-ink-600">{p.category}</td>
-                      <td className="px-5 py-3 text-right text-ink-600">{p.totalStock} {p.unit === 'pacote' ? 'un' : p.unit === 'unidade' ? 'un' : p.unit}</td>
+                      <td className="px-5 py-3 text-right text-ink-600">{formatNumber(p.totalStock)} {p.unit ?? 'unidade'}</td>
                       <td className="px-5 py-3 text-center text-ink-600">{lotCount} {lotCount === 1 ? 'lote' : 'lotes'}</td>
                       <td className="px-5 py-3 text-ink-600">{formatDate(nextExp)}</td>
                       <td className="px-5 py-3">
@@ -151,20 +151,18 @@ export function ProductsPage() {
           {/* Mobile cards */}
           <div className="lg:hidden divide-y divide-ink-100">
             {filtered.map((p) => {
-              const nextExp = getNextExpiration(getProductLots(p.id));
-              const status = getProductStatus(p.id);
-              const lotCount = getProductLots(p.id).length;
+              const { nextExp, status, lotCount } = p;
               return (
                 <div key={p.id} className="p-4 cursor-pointer hover:bg-ink-50/50" onClick={() => navigate(`/products/${p.id}`)}>
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <p className="font-medium text-ink-800 text-sm">{p.name}</p>
-                      <p className="text-xs text-ink-500 mt-0.5">{p.barcode} • {p.category}</p>
+                      <p className="text-xs text-ink-500 mt-0.5">{p.barcode ?? p.sku} • {p.category}</p>
                     </div>
                     <StatusBadge status={status} size="sm" />
                   </div>
                   <div className="flex items-center justify-between text-xs text-ink-500">
-                    <span>{p.totalStock} unidades • {lotCount} lotes</span>
+                    <span>{formatNumber(p.totalStock)} {p.unit ?? 'unidade'} • {lotCount} lotes</span>
                     <span>{formatDate(nextExp)}</span>
                   </div>
                 </div>
@@ -175,6 +173,7 @@ export function ProductsPage() {
       )}
 
       <BarcodeScannerModal
+        products={products}
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onProductFound={(product) => navigate(`/products/${product.id}`)}

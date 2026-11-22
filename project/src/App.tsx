@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -8,19 +8,24 @@ import { NewProductPage } from '@/pages/NewProductPage';
 import { ExpirationsPage } from '@/pages/ExpirationsPage';
 import { EntriesPage } from '@/pages/EntriesPage';
 import { NewEntryPage } from '@/pages/NewEntryPage';
+import { LiveNotificationsPage } from '@/pages/management/LiveNotificationsPage';
+import { LivePromotionsPage } from '@/pages/management/LivePromotionsPage';
+import { LiveReportsPage } from '@/pages/management/LiveReportsPage';
+import { LiveSettingsPage } from '@/pages/management/LiveSettingsPage';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { dashboardService } from '@/services';
-import { formatDate, formatNumber } from '@/utils/format';
-import type { CriticalProduct } from '@/types';
+import { useInventoryOverview, useInventoryRequest, useInventoryScope } from '@/hooks/useInventory';
+import { inventoryService, type ExpirationItem } from '@/services/inventory';
+import { formatCurrency, formatDate, formatNumber } from '@/utils/format';
 import {
   LayoutDashboard,
   Package,
   Clock3,
+  ArrowLeftRight,
   Tag,
   Bell,
   Settings,
   Menu,
-  Plus,
+  ChartNoAxesCombined,
   X,
   AlertTriangle,
   AlertCircle,
@@ -32,8 +37,10 @@ type Page =
   | 'dashboard'
   | 'products'
   | 'expiration'
+  | 'entries'
   | 'promotions'
   | 'notifications'
+  | 'reports'
   | 'settings';
 
 const navigation = [
@@ -48,6 +55,11 @@ const navigation = [
     icon: Package,
   },
   {
+    id: 'entries' as Page,
+    label: 'Movimentações',
+    icon: ArrowLeftRight,
+  },
+  {
     id: 'expiration' as Page,
     label: 'Vencimentos',
     icon: Clock3,
@@ -56,6 +68,11 @@ const navigation = [
     id: 'promotions' as Page,
     label: 'Promoções',
     icon: Tag,
+  },
+  {
+    id: 'reports' as Page,
+    label: 'Relatórios',
+    icon: ChartNoAxesCombined,
   },
   {
     id: 'notifications' as Page,
@@ -73,12 +90,12 @@ const paths: Record<Page, string> = {
   dashboard: '/',
   products: '/products',
   expiration: '/expirations',
+  entries: '/entries',
   promotions: '/promotions',
+  reports: '/reports',
   notifications: '/notifications',
   settings: '/settings',
 };
-
-type DashboardData = Awaited<ReturnType<typeof dashboardService.getDashboard>>;
 
 function App() {
   const { user, logout } = useAuth();
@@ -86,20 +103,10 @@ function App() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [inventoryRevision, setInventoryRevision] = useState(0);
   const currentNavigation = navigation.find(({ id }) => {
     const path = paths[id];
     return pathname === path || (path !== '/' && pathname.startsWith(path + '/'));
   });
-
-  useEffect(() => {
-    let active = true;
-    dashboardService.getDashboard().then((data) => {
-      if (active) setDashboard(data);
-    });
-    return () => { active = false; };
-  }, [pathname, inventoryRevision]);
 
   const handleNavigation = (page: Page) => {
     navigate(paths[page]);
@@ -185,11 +192,6 @@ function App() {
                 <Icon size={19} />
                 <span>{item.label}</span>
 
-                {item.id === 'expiration' && Boolean(dashboard?.summary.expiring7Days) && (
-                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-error-100 px-1.5 text-xs font-semibold text-error-700">
-                    {dashboard?.summary.expiring7Days}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -241,8 +243,6 @@ function App() {
               aria-label="Notificações"
             >
               <Bell size={20} />
-
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error-500" />
             </button>
 
             <button
@@ -256,21 +256,20 @@ function App() {
           </div>
         </header>
 
-        <main className={currentNavigation?.id === 'dashboard' || ['promotions', 'notifications', 'settings'].includes(currentNavigation?.id ?? '') ? 'p-4 sm:p-6 lg:p-8' : ''}>
-          <p role="note" className="mx-4 mt-4 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800 sm:mx-6">
-            O estoque e as demais telas operacionais ainda usam dados de demonstração.
-          </p>
-          <Routes>
-            <Route index element={dashboard ? <Dashboard data={dashboard} /> : <LoadingState />} />
+        <main className={currentNavigation?.id === 'dashboard' ? 'p-4 sm:p-6 lg:p-8' : ''}>
+          <Routes key={store.id}>
+            <Route index element={<Dashboard />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="products/new" element={<NewProductPage />} />
-            <Route path="products/:id" element={<ProductDetailPage onLotsChanged={() => setInventoryRevision((value) => value + 1)} />} />
+            <Route path="products/:id" element={<ProductDetailPage />} />
+            <Route path="products/:id/edit" element={<NewProductPage />} />
             <Route path="expirations" element={<ExpirationsPage />} />
             <Route path="entries" element={<EntriesPage />} />
             <Route path="entries/new" element={<NewEntryPage />} />
-            <Route path="promotions" element={<PromotionsPage />} />
-            <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="promotions" element={<LivePromotionsPage />} />
+            <Route path="reports" element={<LiveReportsPage />} />
+            <Route path="notifications" element={<LiveNotificationsPage />} />
+            <Route path="settings" element={<LiveSettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -279,12 +278,26 @@ function App() {
   );
 }
 
-function Dashboard({ data }: { data: DashboardData }) {
+function Dashboard() {
   const navigate = useNavigate();
-  const { summary, criticalProducts, alerts } = data;
-  const expiring = summary.expiring7Days + summary.expiring30Days;
-  const controlledLots = summary.normalCount + summary.expiredCount + expiring;
-  const healthy = controlledLots > 0 ? Math.round(100 * summary.normalCount / controlledLots) : null;
+  const { token, storeId } = useInventoryScope();
+  const { data: overview, error: overviewError, reload: reloadOverview } = useInventoryOverview();
+  const { data: summary, error, reload } = useInventoryRequest(useCallback(
+    (signal) => inventoryService.dashboard(token, storeId, signal), [token, storeId],
+  ));
+
+  if (error || overviewError) return (
+    <div className="card p-5">
+      <p role="alert" className="text-error-700">{error ?? overviewError}</p>
+      <button className="btn-secondary mt-3" onClick={() => { reload(); reloadOverview(); }}>Tentar novamente</button>
+    </div>
+  );
+  if (!summary || !overview) return <LoadingState />;
+
+  const expiring = summary.criticalLots + summary.attentionLots;
+  const controlledLots = summary.normalLots + summary.expiredLots + expiring;
+  const healthy = controlledLots > 0 ? Math.round(100 * summary.normalLots / controlledLots) : null;
+  const criticalProducts = overview.items.filter((item) => item.lot.quantity > 0 && (item.status === 'critical' || item.status === 'warning'));
   return (
     <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
       {/* Welcome */}
@@ -304,8 +317,8 @@ function Dashboard({ data }: { data: DashboardData }) {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total de produtos"
-          value={formatNumber(summary.totalProducts)}
-          description="Produtos cadastrados"
+          value={formatNumber(summary.stockedProducts)}
+          description="Produtos com saldo na loja ativa"
           icon={Package}
         />
 
@@ -319,7 +332,7 @@ function Dashboard({ data }: { data: DashboardData }) {
 
         <StatCard
           title="Vencidos"
-          value={formatNumber(summary.expiredCount)}
+          value={formatNumber(summary.expiredLots)}
           description="Lotes vencidos com saldo"
           icon={AlertCircle}
           variant="error"
@@ -333,6 +346,10 @@ function Dashboard({ data }: { data: DashboardData }) {
           variant="success"
         />
       </section>
+
+      <p className="rounded-lg bg-brand-50 px-4 py-3 text-sm text-ink-700">
+        Valor em estoque <strong>{summary.stockValue === null ? 'Custo incompleto' : formatCurrency(summary.stockValue)}</strong>
+      </p>
 
       {/* Alert */}
       <section className="card border-warning-200 bg-warning-50 p-4 sm:p-5">
@@ -348,14 +365,16 @@ function Dashboard({ data }: { data: DashboardData }) {
               </h3>
 
               <p className="mt-1 text-sm text-warning-800">
-                {alerts[0].message}
+                {summary.criticalLots > 0
+                  ? `${formatNumber(summary.criticalLots)} lote(s) com saldo vencem nos próximos 7 dias.`
+                  : 'Nenhum lote com saldo vence nos próximos 7 dias.'}
               </p>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={() => navigate(alerts[0].actionLink)}
+            onClick={() => navigate('/expirations?status=critical&stock=available')}
             className="btn-secondary whitespace-nowrap"
           >
             Ver vencimentos
@@ -379,7 +398,7 @@ function Dashboard({ data }: { data: DashboardData }) {
 
           <button
             type="button"
-            onClick={() => navigate(alerts[1].actionLink)}
+            onClick={() => navigate('/expirations?period=30&stock=available')}
             className="btn-ghost"
           >
             Ver todos
@@ -435,7 +454,7 @@ function StatCard({
   );
 }
 
-function ProductTable({ items }: { items: CriticalProduct[] }) {
+function ProductTable({ items }: { items: ExpirationItem[] }) {
   if (items.length === 0) return <p className="p-5 text-sm text-ink-500">Nenhum produto próximo do vencimento.</p>;
 
   return (
@@ -453,7 +472,7 @@ function ProductTable({ items }: { items: CriticalProduct[] }) {
 
         <tbody className="divide-y divide-ink-100">
           {items.map(({ product, lot, status }) => (
-            <tr key={product.id} className="hover:bg-ink-50">
+            <tr key={lot.id} className="hover:bg-ink-50">
               <td className="px-5 py-4 font-medium text-ink-900">
                 <Link className="hover:underline" to={`/products/${product.id}`}>{product.name}</Link>
                 <p className="text-xs text-ink-500">Lote {lot.lotNumber}</p>
@@ -464,11 +483,11 @@ function ProductTable({ items }: { items: CriticalProduct[] }) {
               </td>
 
               <td className="px-5 py-4 text-ink-600">
-                {formatNumber(lot.currentQuantity)} {product.unit}
+                {formatNumber(lot.quantity)} {product.unit}
               </td>
 
               <td className="px-5 py-4 font-medium text-ink-700">
-                {formatDate(lot.expirationDate)}
+                {formatDate(lot.expirationDate ?? undefined)}
               </td>
 
               <td className="px-5 py-4">
@@ -505,197 +524,6 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`badge ${current.className}`}>
       {current.label}
     </span>
-  );
-}
-
-function PromotionsPage() {
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
-      <PageHeader
-        title="Promoções"
-        description="Crie promoções para produtos próximos do vencimento."
-        action={
-          <button type="button" className="btn-primary">
-            <Plus size={18} />
-            Nova promoção
-          </button>
-        }
-      />
-
-      <div className="card p-8 text-center">
-        <Tag
-          size={42}
-          className="mx-auto text-ink-300"
-        />
-
-        <h3 className="mt-4 font-semibold text-ink-800">
-          Aumente suas vendas e reduza perdas
-        </h3>
-
-        <p className="mx-auto mt-2 max-w-lg text-sm text-ink-500">
-          Produtos próximos do vencimento poderão ser selecionados
-          para criação de promoções e cartazes para a loja.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function NotificationsPage() {
-  return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-fade-in">
-      <PageHeader
-        title="Notificações"
-        description="Configure como você deseja receber alertas do estoque."
-      />
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <NotificationCard
-          title="E-mail"
-          description="Receba alertas de produtos próximos do vencimento."
-          enabled
-        />
-
-        <NotificationCard
-          title="Telegram"
-          description="Receba notificações diretamente pelo Telegram."
-          enabled={false}
-        />
-      </div>
-    </div>
-  );
-}
-
-function NotificationCard({
-  title,
-  description,
-  enabled,
-}: {
-  title: string;
-  description: string;
-  enabled: boolean;
-}) {
-  return (
-    <div className="card flex items-start justify-between gap-4 p-5">
-      <div className="flex gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-          <Bell size={20} />
-        </div>
-
-        <div>
-          <h3 className="font-semibold text-ink-900">{title}</h3>
-          <p className="mt-1 text-sm text-ink-500">{description}</p>
-        </div>
-      </div>
-
-      <span
-        className={`badge ${
-          enabled
-            ? 'bg-success-50 text-success-700'
-            : 'bg-ink-100 text-ink-500'
-        }`}
-      >
-        {enabled ? 'Ativo' : 'Inativo'}
-      </span>
-    </div>
-  );
-}
-
-function SettingsPage() {
-  return (
-    <div className="mx-auto max-w-4xl space-y-6 animate-fade-in">
-      <PageHeader
-        title="Configurações"
-        description="Configure os dados e preferências da sua loja."
-      />
-
-      <div className="card p-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-            <Package size={32} />
-          </div>
-
-          <div>
-            <h3 className="font-semibold text-ink-900">
-              Identidade da loja
-            </h3>
-
-            <p className="mt-1 text-sm text-ink-500">
-              Adicione o logo da sua loja para personalizar o sistema.
-            </p>
-
-            <button
-              type="button"
-              className="btn-secondary mt-3"
-            >
-              Alterar imagem
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="card p-6">
-        <h3 className="font-semibold text-ink-900">
-          Informações da loja
-        </h3>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink-700">
-              Nome da loja
-            </label>
-
-            <input
-              className="input-field"
-              defaultValue="Minha Loja"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-ink-700">
-              E-mail
-            </label>
-
-            <input
-              className="input-field"
-              placeholder="contato@minhaloja.com"
-            />
-          </div>
-        </div>
-
-        <div className="mt-5 flex justify-end">
-          <button type="button" className="btn-primary">
-            Salvar alterações
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PageHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-ink-900">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-sm text-ink-500">
-          {description}
-        </p>
-      </div>
-
-      {action}
-    </div>
   );
 }
 

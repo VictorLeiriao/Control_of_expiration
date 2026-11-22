@@ -1,5 +1,5 @@
 import { mockProducts, mockLots, mockEntries, mockNotifications, mockCompany, mockUser, mockActions, mockLosses } from '@/mocks';
-import type { Product, ProductWithStock, ProductLot, Entry, Notification, Company, User, ActionRecord, LossRecord, DashboardSummary, DashboardAlert, CriticalProduct, ReportSummary, PromotionData } from '@/types';
+import type { Product, ProductWithStock, ProductLot, Entry, Notification, Company, User, ActionRecord, LossRecord, DashboardSummary, DashboardAlert, CriticalProduct, ReportSummary } from '@/types';
 import { dateKey, daysUntil, getExpirationStatus } from '@/utils/format';
 
 import { calculateLotInventoryValue, calculateStock, compareLots, getFefoPriority } from '@/utils/lots';
@@ -421,12 +421,5 @@ export const reportService = {
   async getLosses(): Promise<LossRecord[]> {
     await delay();
     return [...mockLosses];
-  },
-};
-
-export const promotionService = {
-  async generatePromotion(data: PromotionData): Promise<{ success: boolean; imageUrl?: string }> {
-    await delay(800);
-    return { success: true };
   },
 };

@@ -1,251 +1,90 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { productService, aiProductService } from '@/services';
-import { dateKey } from '@/utils/format';
-import type { Unit } from '@/types';
+import { useState, type FormEvent } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback } from 'react';
 import { PageHeader } from '@/components/layouts/PageHeader';
-import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { Camera, Image as ImageIcon, Loader2, Check, Sparkles, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { useManagementCapabilities } from '@/hooks/useManagementCapabilities';
+import { useInventoryRequest, useInventoryScope } from '@/hooks/useInventory';
+import { inventoryService, type InventoryProduct } from '@/services/inventory';
+import type { Unit } from '@/types';
 
-interface LotFormItem {
-  lotNumber: string;
-  quantity: string;
-  expirationDate: string;
-  purchasePrice: string;
-}
+const units: Unit[] = ['unidade', 'kg', 'g', 'litro', 'ml', 'caixa', 'pacote'];
 
 export function NewProductPage() {
+  const { id } = useParams();
+  const { token } = useInventoryScope();
+  const capabilities = useManagementCapabilities(token);
+  const { data, error } = useInventoryRequest(useCallback(async (signal) => (
+    id ? inventoryService.product(token, id, signal) : null
+  ), [token, id]));
+  if (capabilities === undefined) return <LoadingState />;
+  if (capabilities === null) return <p role="alert" className="p-6 text-error-700">Não foi possível verificar suas permissões.</p>;
+  if (!capabilities.inventoryCatalogWrite) return <div className="p-6"><p role="alert" className="text-error-700">Você não tem permissão para alterar o catálogo.</p><Link className="btn-secondary mt-3" to="/products">Voltar</Link></div>;
+  if (error) return <p role="alert" className="p-6 text-error-700">{error}</p>;
+  if (data === undefined) return <LoadingState />;
+  return <ProductForm key={id ?? 'new'} product={data} token={token} />;
+}
+
+function ProductForm({ product, token }: { product: InventoryProduct | null; token: string }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [aiDetected, setAiDetected] = useState(false);
-
-  const [name, setName] = useState('');
-  const [barcode, setBarcode] = useState('');
-  const [category, setCategory] = useState('');
-  const [brand, setBrand] = useState('');
-  const [hasExpirationControl, setHasExpirationControl] = useState(true);
   const [error, setError] = useState('');
-  const [unit, setUnit] = useState<Unit>('unidade');
-  const [lots, setLots] = useState<LotFormItem[]>([
-    { lotNumber: '', quantity: '', expirationDate: '', purchasePrice: '' },
-  ]);
 
-  function addLot() {
-    setLots([...lots, { lotNumber: '', quantity: '', expirationDate: '', purchasePrice: '' }]);
-  }
-
-  function removeLot(index: number) {
-    setLots(lots.filter((_, i) => i !== index));
-  }
-
-  function updateLot(index: number, field: keyof LotFormItem, value: string) {
-    setLots(lots.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
-  }
-
-  async function handleAiAnalyze() {
-    setAnalyzing(true);
-    const result = await aiProductService.analyzeImage();
-    if (result) {
-      setName(result.name);
-      setBrand(result.brand);
-      setBarcode(result.barcode);
-      setLots([{ lotNumber: result.lotNumber, quantity: '', expirationDate: result.expirationDate, purchasePrice: '' }]);
-      setAiDetected(true);
-    }
-    setAnalyzing(false);
-  }
-
-  async function handleSave() {
-    setSaving(true);
-    setError('');
-    try {
-      const initialLots = lots
-        .filter((lot) => lot.lotNumber || lot.quantity || (hasExpirationControl && lot.expirationDate) || lot.purchasePrice)
-        .map((lot) => ({
-          lotNumber: lot.lotNumber,
-          initialQuantity: lot.quantity ? Number(lot.quantity) : NaN,
-          currentQuantity: lot.quantity ? Number(lot.quantity) : NaN,
-          entryDate: dateKey(new Date())!,
-          expirationDate: hasExpirationControl ? lot.expirationDate || undefined : undefined,
-          purchasePrice: lot.purchasePrice ? Number(lot.purchasePrice.replace(/\./g, '').replace(',', '.')) : 0,
-        }));
-      await productService.createProduct({ name, barcode, category, brand, unit, hasExpirationControl }, initialLots);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Não foi possível cadastrar o produto.');
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const value = (name: string) => String(data.get(name) ?? '').trim();
+    if (!value('sku') || !value('name')) {
+      setError('Informe o SKU e o nome do produto.');
       return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      const saved = await inventoryService.saveProduct(token, {
+        sku: value('sku'),
+        name: value('name'),
+        barcode: value('barcode') || null,
+        category: value('category') || null,
+        brand: value('brand') || null,
+        unit: value('unit') as Unit,
+        hasExpirationControl: data.has('hasExpirationControl'),
+      }, product?.id);
+      navigate(`/products/${saved.id}`);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível salvar o produto.');
     } finally {
       setSaving(false);
     }
-    setSuccess(true);
-    setTimeout(() => navigate('/products'), 1500);
-  }
-
-  if (success) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-16 h-16 rounded-2xl bg-success-50 flex items-center justify-center mb-4">
-          <Check className="w-8 h-8 text-success-600" />
-        </div>
-        <h2 className="text-lg font-semibold text-ink-900">Produto cadastrado com sucesso!</h2>
-        <p className="text-sm text-ink-500 mt-1">Redirecionando para a lista de produtos...</p>
-      </div>
-    );
   }
 
   return (
     <div className="p-6 lg:p-8 max-w-3xl mx-auto">
-      {error && <p role="alert" className="mb-4 text-sm text-error-700">{error}</p>}
-      <PageHeader title="Novo produto" description="Cadastre um produto e seus lotes">
-        <button onClick={() => navigate('/products')} className="btn-secondary">
-          <ArrowLeft className="w-4 h-4" />
-          Voltar
-        </button>
-      </PageHeader>
-
-      {/* Cadastro inteligente */}
-      <div className="card p-5 mb-6 bg-gradient-to-br from-brand-50 to-accent-50 border-brand-200">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-5 h-5 text-brand-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-ink-800">Cadastro inteligente</h3>
-            <p className="text-xs text-ink-500 mt-0.5 mb-3">
-              Cadastre seu produto mais rapidamente usando uma imagem. No futuro, poderemos identificar automaticamente o produto, lote e validade usando inteligência artificial.
-            </p>
-            <div className="flex items-center gap-3">
-              <button onClick={handleAiAnalyze} disabled={analyzing} className="btn-secondary text-sm">
-                {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-                {analyzing ? 'Analisando...' : 'Usar câmera'}
-              </button>
-              <button onClick={handleAiAnalyze} disabled={analyzing} className="btn-secondary text-sm">
-                <ImageIcon className="w-4 h-4" />
-                Importar imagem
-              </button>
-            </div>
-            {aiDetected && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-success-600">
-                <Check className="w-4 h-4" />
-                Produto identificado! Confirme os dados abaixo.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-6">
-        <div className={`flex items-center gap-2 ${step >= 1 ? 'text-brand-600' : 'text-ink-400'}`}>
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${step >= 1 ? 'bg-brand-600 text-white' : 'bg-ink-200 text-ink-500'}`}>1</div>
-          <span className="text-sm font-medium">Informações</span>
-        </div>
-        <div className="flex-1 h-px bg-ink-200" />
-        <div className={`flex items-center gap-2 ${step >= 2 ? 'text-brand-600' : 'text-ink-400'}`}>
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${step >= 2 ? 'bg-brand-600 text-white' : 'bg-ink-200 text-ink-500'}`}>2</div>
-          <span className="text-sm font-medium">Estoque inicial</span>
-        </div>
-      </div>
-
-      {step === 1 && (
-        <div className="card p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-ink-700 mb-1.5">Nome do produto *</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Ração Golden 15kg" className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-ink-700 mb-1.5">Código de barras</label>
-            <input type="text" value={barcode} onChange={(e) => setBarcode(e.target.value)} placeholder="Ex: 789000000001" className="input-field" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-1.5">Categoria</label>
-              <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ex: Ração" className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-ink-700 mb-1.5">Marca</label>
-              <input type="text" value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Ex: Golden" className="input-field" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-ink-700 mb-1.5">Unidade de medida</label>
-            <select value={unit} onChange={(e) => setUnit(e.target.value as Unit)} className="input-field">
-              <option value="unidade">Unidade</option>
-              <option value="kg">Quilograma (kg)</option>
-              <option value="g">Grama (g)</option>
-              <option value="litro">Litro</option>
-              <option value="ml">Mililitro (ml)</option>
-              <option value="caixa">Caixa</option>
-              <option value="pacote">Pacote</option>
+      <PageHeader title={product ? 'Editar produto' : 'Novo produto'}
+        description="O catálogo é compartilhado entre as lojas da empresa. As quantidades são registradas em movimentações." />
+      <form className="card p-6 space-y-4" onSubmit={submit}>
+        <fieldset disabled={saving} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="text-sm font-medium">Nome do produto<input className="input-field mt-1" name="name" defaultValue={product?.name} maxLength={200} required /></label>
+          <label className="text-sm font-medium">SKU<input className="input-field mt-1" name="sku" defaultValue={product?.sku} maxLength={60} required /></label>
+          <label className="text-sm font-medium">Código de barras<input className="input-field mt-1" name="barcode" defaultValue={product?.barcode ?? ''} maxLength={60} /></label>
+          <label className="text-sm font-medium">Categoria<input className="input-field mt-1" name="category" defaultValue={product?.category ?? ''} maxLength={100} /></label>
+          <label className="text-sm font-medium">Marca<input className="input-field mt-1" name="brand" defaultValue={product?.brand ?? ''} maxLength={100} /></label>
+          <label className="text-sm font-medium">Unidade de medida
+            <select className="input-field mt-1" name="unit" defaultValue={product?.unit ?? 'unidade'}>
+              {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
             </select>
-          </div>
-          <div className="flex items-center justify-end pt-2">
-            <button onClick={() => setStep(2)} disabled={!name} className="btn-primary">
-              Próximo
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="card p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-ink-800">Estoque inicial — Lotes</h3>
-            <button onClick={addLot} className="btn-ghost text-sm">
-              <Plus className="w-4 h-4" />
-              Adicionar lote
-            </button>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm mb-4">
-            <input type="checkbox" checked={hasExpirationControl} onChange={(event) => setHasExpirationControl(event.target.checked)} />
+          </label>
+          <label className="flex gap-2 items-center text-sm">
+            <input type="checkbox" name="hasExpirationControl" defaultChecked={product?.hasExpirationControl ?? true} />
             Controlar validade deste produto
           </label>
-          {lots.map((lot, index) => (
-            <div key={index} className="rounded-xl border border-ink-200 p-4 space-y-3 bg-ink-50/50">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-ink-500">Lote {index + 1}</span>
-                {lots.length > 1 && (
-                  <button onClick={() => removeLot(index)} className="p-1 rounded-lg text-ink-400 hover:text-error-600 hover:bg-error-50">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1">Número do lote</label>
-                  <input type="text" value={lot.lotNumber} onChange={(e) => updateLot(index, 'lotNumber', e.target.value)} placeholder="Ex: ABC123" className="input-field" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1">Quantidade</label>
-                  <input type="number" value={lot.quantity} onChange={(e) => updateLot(index, 'quantity', e.target.value)} placeholder="Ex: 20" className="input-field" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1">Validade</label>
-                  <input disabled={!hasExpirationControl} type="date" value={hasExpirationControl ? lot.expirationDate : ''} onChange={(e) => updateLot(index, 'expirationDate', e.target.value)} className="input-field" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-ink-600 mb-1">Preço de compra</label>
-                  <CurrencyInput value={lot.purchasePrice} onChange={(v) => updateLot(index, 'purchasePrice', v)} placeholder="0,00" />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          <div className="flex items-center justify-between pt-2">
-            <button onClick={() => setStep(1)} className="btn-secondary">
-              <ArrowLeft className="w-4 h-4" />
-              Voltar
-            </button>
-            <button onClick={handleSave} disabled={saving || !name} className="btn-primary">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {saving ? 'Salvando...' : 'Salvar produto'}
-            </button>
-          </div>
+        </fieldset>
+        {error && <p role="alert" className="text-sm text-error-700">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" disabled={saving} className="btn-secondary" onClick={() => navigate(product ? `/products/${product.id}` : '/products')}>Voltar</button>
+          <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Salvando…' : 'Salvar produto'}</button>
         </div>
-      )}
+      </form>
     </div>
   );
 }

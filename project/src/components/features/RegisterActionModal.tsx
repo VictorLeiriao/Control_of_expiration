@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Tag, Undo2, ArrowLeftRight, ShoppingCart, Trash2, Pencil } from 'lucide-react';
-import { cn } from '@/utils/cn';
 import type { ActionType, CriticalProduct, PromotionData } from '@/types';
 import { formatCurrency } from '@/utils/format';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';

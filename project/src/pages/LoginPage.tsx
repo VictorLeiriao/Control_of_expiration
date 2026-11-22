@@ -1,4 +1,5 @@
-﻿import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { sessionService, type TenantOption } from '@/services/session';
 import { useAuth } from '@/contexts/AuthContext';
 import { Boxes, Loader2 } from 'lucide-react';
@@ -138,6 +139,7 @@ export function LoginPage() {
               {tenants.length || registering ? 'Voltar para entrar' : 'Criar conta'}
             </button>
           </form>
+          <Link className="btn-ghost mt-2 w-full" to="/invitations/accept">Aceitar convite</Link>
         </div>
       </div>
     </div>

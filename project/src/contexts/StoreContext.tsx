@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/contexts/AuthContext';
 import { sessionService, type Session, type StoreOption } from '@/services/session';
@@ -7,6 +7,7 @@ interface StoreContextValue {
   store: StoreOption;
   stores: StoreOption[];
   selectStore: (id: string) => void;
+  addStore: (code: string, name: string) => Promise<StoreOption>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -42,14 +43,19 @@ export function StoreProvider({ session, children }: { session: Session; childre
     setSelectedId(id);
   }
 
+  async function addStore(code: string, name: string) {
+    const store = await sessionService.createStore(session.accessToken, code.trim(), name.trim());
+    setStores((items) => [...(items ?? []), store]);
+    return store;
+  }
+
   async function createStore(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     setCreating(true);
     setError('');
     try {
-      const store = await sessionService.createStore(session.accessToken, String(data.get('code')).trim(), String(data.get('name')).trim());
-      setStores([store]);
+      const store = await addStore(String(data.get('code')), String(data.get('name')));
       sessionStorage.setItem(storageKey, store.id);
       setSelectedId(store.id);
     } catch (failure) {
@@ -61,7 +67,7 @@ export function StoreProvider({ session, children }: { session: Session; childre
 
   if (!stores && !error) return <LoadingState />;
   const store = stores?.find((item) => item.id === selectedId) ?? (stores?.length === 1 ? stores[0] : undefined);
-  if (store && stores) return <StoreContext.Provider value={{ store, stores, selectStore }}>{children}</StoreContext.Provider>;
+  if (store && stores) return <StoreContext.Provider value={{ store, stores, selectStore, addStore }}>{children}</StoreContext.Provider>;
 
   return (
     <main className="min-h-screen bg-ink-50 grid place-items-center p-4">

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Check } from 'lucide-react';
 
 export function PreferencesSettingsPage() {
-  const [theme, setTheme] = useState('light');
   const [compactMode, setCompactMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [saved, setSaved] = useState(false);

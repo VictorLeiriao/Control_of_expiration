@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { expirationService, type ExpirationLot } from '@/services';
-import type { CriticalProduct } from '@/types';
+import { useManagementCapabilities } from '@/hooks/useManagementCapabilities';
+import { useInventoryOverview, useInventoryScope } from '@/hooks/useInventory';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { DashboardCard } from '@/components/ui/DashboardCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -10,7 +10,6 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
-import { RegisterActionModal } from '@/components/features/RegisterActionModal';
 import { dateKey, formatCurrency, formatDate, getExpirationLabel } from '@/utils/format';
 import { fefoExplanation } from '@/utils/lots';
 import { AlertTriangle, Clock, CalendarClock, CalendarCheck, Zap, Eye } from 'lucide-react';
@@ -24,8 +23,9 @@ const indicators = [
 
 export function ExpirationsPage() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<ExpirationLot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { token } = useInventoryScope();
+  const canMoveStock = useManagementCapabilities(token)?.inventoryStockWrite;
+  const { data, error, reload } = useInventoryOverview();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [params, setParams] = useSearchParams();
@@ -43,36 +43,29 @@ export function ExpirationsPage() {
     else next.set(key, value);
     setParams(next, { replace: true });
   }
-  const [actionModal, setActionModal] = useState<{ open: boolean; item: CriticalProduct | null }>({ open: false, item: null });
+  if (error) return <div className="p-6"><p role="alert" className="text-error-700">{error}</p><button className="btn-secondary mt-3" onClick={reload}>Tentar novamente</button></div>;
+  if (!data) return <LoadingState />;
 
-  useEffect(() => {
-    expirationService.getLots().then((data) => {
-      setItems(data);
-      setLoading(false);
-    });
-  }, []);
-
-  const categories = [...new Set(items.map((item) => item.product.category))].filter(Boolean).sort();
+  const items = data.items;
+  const categories = [...new Set(data.products.flatMap(({ category }) => category ? [category] : []))].sort();
   const products = [...new Map(items.map(({ product }) => [product.id, product])).values()]
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const query = search.trim().toLocaleLowerCase('pt-BR');
 
   const filtered = items.filter((item) => {
     const { product, lot } = item;
-    if (query && ![product.name, lot.lotNumber, product.barcode].some((value) => value.toLocaleLowerCase('pt-BR').includes(query))) return false;
+    if (query && ![product.name, lot.lotNumber, product.barcode, product.sku].some((value) => value?.toLocaleLowerCase('pt-BR').includes(query))) return false;
     if (categoryFilter !== 'all' && product.category !== categoryFilter) return false;
     if (productFilter !== 'all' && product.id !== productFilter) return false;
     if (statusFilter !== 'all' && item.status !== statusFilter) return false;
     if (priorityOnly && !item.isFefo) return false;
-    if (availableOnly && lot.currentQuantity === 0) return false;
+    if (availableOnly && lot.quantity === 0) return false;
     if (periodFilter === '30' && (item.daysRemaining < 0 || item.daysRemaining > 30)) return false;
-    const date = dateKey(lot.expirationDate);
+    const date = dateKey(lot.expirationDate ?? undefined);
     if (from && (!date || date < from)) return false;
     if (to && (!date || date > to)) return false;
     return true;
   });
-
-  if (loading) return <LoadingState />;
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
@@ -82,7 +75,7 @@ export function ExpirationsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {indicators.map(({ status, label, tone, icon }) => (
           <button key={status} aria-pressed={statusFilter === status} onClick={() => setFilter('status', statusFilter === status ? 'all' : status)}>
-            <DashboardCard icon={icon} label={label} tone={tone} value={items.filter((item) => item.status === status).length} />
+            <DashboardCard icon={icon} label={label} tone={tone} value={items.filter((item) => item.status === status && item.lot.quantity > 0).length} />
           </button>
         ))}
       </div>
@@ -160,12 +153,12 @@ export function ExpirationsPage() {
                   <tr key={item.lot.id} className="hover:bg-ink-50/50 transition-colors">
                     <td className="px-5 py-3 font-medium text-ink-800">{item.product.name}</td>
                     <td className="px-5 py-3 text-ink-600 font-mono text-xs break-all">{item.lot.lotNumber}{item.isFefo && <PriorityBadge />}</td>
-                    <td className="px-5 py-3 text-right text-ink-600">{item.lot.currentQuantity}</td>
-                    <td className="px-5 py-3 text-ink-600">{formatDate(item.lot.expirationDate)}</td>
+                    <td className="px-5 py-3 text-right text-ink-600">{item.lot.quantity}</td>
+                    <td className="px-5 py-3 text-ink-600">{formatDate(item.lot.expirationDate ?? undefined)}</td>
                     <td className="px-5 py-3">
-                      <ExpirationBadge expirationDate={item.lot.expirationDate} daysRemaining={item.daysRemaining} />
+                      <ExpirationBadge expirationDate={item.lot.expirationDate ?? undefined} daysRemaining={item.daysRemaining} />
                     </td>
-                    <td className="px-5 py-3 text-right font-medium text-ink-800">{formatCurrency(item.riskValue)}</td>
+                    <td className="px-5 py-3 text-right font-medium text-ink-800">{item.lot.value === null ? '—' : formatCurrency(item.lot.value)}</td>
                     <td className="px-5 py-3">
                       <StatusBadge status={item.status} size="sm" />
                     </td>
@@ -174,13 +167,13 @@ export function ExpirationsPage() {
                         <button onClick={() => navigate(`/products/${item.product.id}`)} className="p-1.5 rounded-lg text-ink-500 hover:bg-ink-100 hover:text-ink-700 transition-colors" title="Ver">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => setActionModal({ open: true, item })}
+                        {canMoveStock && <button
+                          onClick={() => navigate(`/entries/new?product=${item.product.id}&lot=${item.lot.id}${item.isFefo ? '&type=fefo' : ''}`)}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-50 text-brand-700 text-xs font-medium hover:bg-brand-100 transition-colors"
                         >
                           <Zap className="w-3.5 h-3.5" />
-                          Registrar ação
-                        </button>
+                          Movimentar
+                        </button>}
                       </div>
                     </td>
                   </tr>
@@ -196,25 +189,25 @@ export function ExpirationsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-medium text-ink-800 text-sm">{item.product.name}</p>
-                    <p className="text-xs text-ink-500 mt-0.5 break-all">Lote {item.lot.lotNumber} • {item.lot.currentQuantity} {item.product.unit}</p>
+                    <p className="text-xs text-ink-500 mt-0.5 break-all">Lote {item.lot.lotNumber} • {item.lot.quantity} {item.product.unit}</p>
                   </div>
                   <StatusBadge status={item.status} size="sm" />
                   {item.isFefo && <PriorityBadge />}
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-ink-500">Validade: {formatDate(item.lot.expirationDate)}</span>
-                  <span className="font-medium text-ink-700">{formatCurrency(item.riskValue)}</span>
+                  <span className="text-ink-500">Validade: {formatDate(item.lot.expirationDate ?? undefined)}</span>
+                  <span className="font-medium text-ink-700">{item.lot.value === null ? '—' : formatCurrency(item.lot.value)}</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <ExpirationBadge expirationDate={item.lot.expirationDate} daysRemaining={item.daysRemaining} />
+                  <ExpirationBadge expirationDate={item.lot.expirationDate ?? undefined} daysRemaining={item.daysRemaining} />
                   <button className="btn-ghost text-xs" onClick={() => navigate(`/products/${item.product.id}`)}>Ver produto</button>
-                  <button
-                    onClick={() => setActionModal({ open: true, item })}
+                  {canMoveStock && <button
+                    onClick={() => navigate(`/entries/new?product=${item.product.id}&lot=${item.lot.id}${item.isFefo ? '&type=fefo' : ''}`)}
                     className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-brand-50 text-brand-700 text-xs font-medium"
                   >
                     <Zap className="w-3.5 h-3.5" />
-                    Registrar ação
-                  </button>
+                    Movimentar
+                  </button>}
                 </div>
               </div>
             ))}
@@ -222,12 +215,6 @@ export function ExpirationsPage() {
         </div>
       )}
 
-      <RegisterActionModal
-        open={actionModal.open}
-        onClose={() => setActionModal({ open: false, item: null })}
-        item={actionModal.item}
-        onConfirm={() => setActionModal({ open: false, item: null })}
-      />
     </div>
   );
 }

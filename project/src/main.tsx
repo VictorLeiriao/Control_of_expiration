@@ -1,15 +1,18 @@
 import { StrictMode } from 'react';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, useLocation } from 'react-router-dom';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { StoreProvider } from '@/contexts/StoreContext';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { LoginPage } from '@/pages/LoginPage';
+import { AcceptInvitationPage } from '@/pages/management/AcceptInvitationPage';
 import App from './App.tsx';
 import './index.css';
 
 function SessionGate() {
   const { user, session, loading, error, retry, logout } = useAuth();
+  const { pathname } = useLocation();
+  if (pathname === '/invitations/accept') return <AcceptInvitationPage />;
   if (loading) return <LoadingState />;
   if (error) return (
     <main className="min-h-screen bg-ink-50 grid place-items-center p-4">
