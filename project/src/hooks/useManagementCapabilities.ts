@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiRequest } from '@/services/api';
 
 interface ManagementCapabilities {
@@ -6,6 +6,7 @@ interface ManagementCapabilities {
   membersRead: boolean;
   membersInvite: boolean;
   membersDeactivate: boolean;
+  membersManage: boolean;
   alertsDispatch: boolean;
   promotionsWrite: boolean;
   reportsRead: boolean;

@@ -12,6 +12,7 @@ import './index.css';
 function SessionGate() {
   const { user, session, loading, error, retry, logout } = useAuth();
   const { pathname } = useLocation();
+  if (pathname === '/employees/activate') return <AcceptInvitationPage key="activation" activation />;
   if (pathname === '/invitations/accept') return <AcceptInvitationPage />;
   if (loading) return <LoadingState />;
   if (error) return (

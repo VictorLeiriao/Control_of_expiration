@@ -1,6 +1,13 @@
-﻿import { apiRequest } from './api';
+import { apiRequest } from './api';
 
-export interface Member { userId: string; name: string; email: string; roleCode: string; isActive: boolean }
+export type EmployeeRole = 'MEMBER' | 'OPERATOR' | 'MANAGER';
+export interface EmployeeProfile { name: string; jobTitle: string | null; roleCode: EmployeeRole; isActive: boolean }
+export interface Member extends Omit<EmployeeProfile, 'roleCode'> {
+  userId: string;
+  email: string;
+  roleCode: EmployeeRole | 'OWNER';
+  activationPending: boolean;
+}
 export interface Invitation { token: string; expiresAt: string }
 export interface CatalogProduct { id: string; name: string; sku: string }
 export interface CatalogLot { id: string; lotNumber: string; expirationDate: string | null }
@@ -38,7 +45,16 @@ async function list<T>(path: string, token: string, signal?: AbortSignal): Promi
 
 export const managementService = {
   members: (token: string, signal?: AbortSignal) => apiRequest<Member[]>('/tenant/members', { token, signal }),
-  invite: (token: string, email: string) => apiRequest<Invitation>('/tenant/invitations', { token, body: { email, roleCode: 'MEMBER' } }),
+  invite: (token: string, email: string, roleCode: EmployeeRole) =>
+    apiRequest<Invitation>('/tenant/invitations', { token, body: { email, roleCode } }),
+  createEmployee: (token: string, body: Omit<EmployeeProfile, 'isActive'> & { email: string }) =>
+    apiRequest<{ userId: string; activation: Invitation }>('/tenant/members', { token, body }),
+  updateEmployee: (token: string, id: string, body: EmployeeProfile) =>
+    apiRequest<void>(`/tenant/members/${id}`, { token, method: 'PUT', body }),
+  renewActivation: (token: string, id: string) =>
+    apiRequest<Invitation>(`/tenant/members/${id}/activation`, { token, method: 'POST' }),
+  activateEmployee: (code: string, password: string) =>
+    apiRequest<void>('/tenant/members/activate', { body: { token: code, password } }),
   accept: (code: string, password: string, name: string) =>
     apiRequest<void>('/tenant/invitations/accept', { body: { token: code, password, name: name || null } }),
   deactivate: (token: string, id: string) => apiRequest<void>(`/tenant/members/${id}/deactivate`, { token, body: {} }),

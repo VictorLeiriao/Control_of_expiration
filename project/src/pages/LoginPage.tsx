@@ -140,6 +140,7 @@ export function LoginPage() {
             </button>
           </form>
           <Link className="btn-ghost mt-2 w-full" to="/invitations/accept">Aceitar convite</Link>
+          <Link className="btn-ghost mt-2 w-full" to="/employees/activate">Ativar acesso de funcionário</Link>
         </div>
       </div>
     </div>

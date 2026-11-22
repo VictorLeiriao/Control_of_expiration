@@ -5,8 +5,8 @@ import { useStore } from '@/contexts/StoreContext';
 import { useManagementCapabilities } from '@/hooks/useManagementCapabilities';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { ApiError } from '@/services/api';
-import { managementService, type Invitation, type Member, type TenantSettings } from '@/services/management';
-import { formatDateTime } from '@/utils/format';
+import { managementService, type TenantSettings } from '@/services/management';
+import { Employees } from './Employees';
 
 export function LiveSettingsPage() {
   const { session, user } = useAuth();
@@ -14,14 +14,14 @@ export function LiveSettingsPage() {
   if (!session || !user) return null;
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <PageHeader title="Configurações" description="Gerencie a empresa, os canais de alerta e os membros." />
+      <PageHeader title="Configurações" description="Gerencie a empresa, os canais de alerta e os funcionários." />
       <div className="space-y-6">
         <Stores canCreate={Boolean(capabilities?.inventoryCatalogWrite)} />
         {capabilities === undefined && <p className="text-sm text-ink-500">Carregando permissões...</p>}
         {capabilities === null && <p role="alert" className="text-sm text-error-700">Não foi possível consultar as permissões da empresa.</p>}
         {capabilities?.tenantSettingsManage && <CompanySettings token={session.accessToken} />}
         {capabilities?.membersRead && (
-          <Members token={session.accessToken} userId={user.userId} canInvite={capabilities.membersInvite} canDeactivate={capabilities.membersDeactivate} />
+          <Employees token={session.accessToken} canInvite={capabilities.membersInvite} canManage={capabilities.membersManage} />
         )}
       </div>
     </div>
@@ -164,104 +164,6 @@ function CompanySettings({ token }: { token: string }) {
             </div>
           </fieldset>
         </form>
-      )}
-    </section>
-  );
-}
-
-function Members({ token, userId, canInvite, canDeactivate }: { token: string; userId: string; canInvite: boolean; canDeactivate: boolean }) {
-  const [members, setMembers] = useState<Member[] | null>(null);
-  const [email, setEmail] = useState('');
-  const [invitation, setInvitation] = useState<Invitation | null>(null);
-  const [confirming, setConfirming] = useState<Member | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    managementService.members(token, controller.signal).then(setMembers).catch((failure: unknown) => {
-      if (controller.signal.aborted) return;
-      setError(failure instanceof ApiError && failure.status === 403
-        ? 'Seu perfil não pode gerenciar os membros da empresa.'
-        : failure instanceof Error ? failure.message : 'Não foi possível carregar os membros.');
-    });
-    return () => controller.abort();
-  }, [token, attempt]);
-
-  async function invite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    setInvitation(null);
-    try {
-      setInvitation(await managementService.invite(token, email.trim()));
-      setEmail('');
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível gerar o convite.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deactivate() {
-    if (!confirming) return;
-    setBusy(true);
-    setError('');
-    try {
-      await managementService.deactivate(token, confirming.userId);
-      setMembers((current) => current?.map((member) => member.userId === confirming.userId ? { ...member, isActive: false } : member) ?? null);
-      setConfirming(null);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível desativar o membro.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card p-5">
-      <h2 className="font-semibold">Membros</h2>
-      {error && <p role="alert" className="my-2 text-sm text-error-700">{error}</p>}
-      {!members && !error && <p className="mt-2 text-sm text-ink-500">Carregando membros…</p>}
-      {!members && error && <button className="btn-secondary mt-2" onClick={() => { setError(''); setAttempt((value) => value + 1); }}>Tentar novamente</button>}
-      {members && (
-        <>
-          {canInvite && <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={invite}>
-            <label className="flex-1 text-sm font-medium">E-mail do novo membro
-              <input className="input-field mt-1" type="email" maxLength={320} value={email} onChange={(event) => setEmail(event.target.value)} required />
-            </label>
-            <button className="btn-primary" disabled={busy}>Gerar convite</button>
-          </form>}
-          {invitation && (
-            <div className="mt-3 rounded-lg bg-brand-50 p-3 text-sm">
-              <p>Compartilhe este código em particular com o novo membro. Válido até {formatDateTime(invitation.expiresAt)}.</p>
-              <code className="break-all">{invitation.token}</code>
-              <button className="btn-ghost mt-1" onClick={() => setInvitation(null)}>Ocultar código</button>
-            </div>
-          )}
-          {confirming && (
-            <div className="mt-3 rounded-lg bg-warning-50 p-3 text-sm">
-              <p>Desativar o acesso de {confirming.name} a esta empresa?</p>
-              <button className="btn-primary mt-2" disabled={busy} onClick={deactivate}>Confirmar desativação</button>
-              <button className="btn-ghost" disabled={busy} onClick={() => setConfirming(null)}>Cancelar</button>
-            </div>
-          )}
-          <ul className="mt-3 divide-y divide-ink-100">
-            {members.map((member) => (
-              <li key={member.userId} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                <div className="min-w-0">
-                  <p className="font-medium">{member.name}</p>
-                  <p className="break-all text-sm text-ink-500">{member.email}</p>
-                  <p className="text-xs text-ink-500">{member.roleCode === 'OWNER' ? 'Proprietário' : 'Membro'} · {member.isActive ? 'Ativo' : 'Inativo'}</p>
-                </div>
-                {canDeactivate && member.isActive && member.roleCode !== 'OWNER' && member.userId !== userId && (
-                  <button className="btn-secondary" disabled={busy} onClick={() => setConfirming(member)}>Desativar</button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
       )}
     </section>
   );
