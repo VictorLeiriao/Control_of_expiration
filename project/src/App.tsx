@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { ProductDetailPage } from '@/pages/ProductDetailPage';
@@ -79,6 +81,8 @@ const paths: Record<Page, string> = {
 type DashboardData = Awaited<ReturnType<typeof dashboardService.getDashboard>>;
 
 function App() {
+  const { user, logout } = useAuth();
+  const { store, stores, selectStore } = useStore();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -192,21 +196,15 @@ function App() {
         </nav>
 
         {/* Store */}
-        <div className="border-t border-ink-200 p-4">
-          <div className="flex items-center gap-3 rounded-lg bg-ink-50 p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 font-semibold text-brand-700">
-              M
-            </div>
-
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink-800">
-                Minha Loja
-              </p>
-              <p className="truncate text-xs text-ink-500">
-                Administrador
-              </p>
-            </div>
-          </div>
+        <div className="border-t border-ink-200 p-4 space-y-2">
+          <label className="block text-xs font-medium text-ink-600">
+            Loja ativa
+            <select className="input-field mt-1" value={store.id} onChange={(event) => selectStore(event.target.value)}>
+              {stores.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <p className="truncate text-xs text-ink-500" title={user?.email}>{user?.email}</p>
+          <button type="button" className="btn-ghost text-xs" onClick={logout}>Sair</button>
         </div>
       </aside>
 
@@ -259,6 +257,9 @@ function App() {
         </header>
 
         <main className={currentNavigation?.id === 'dashboard' || ['promotions', 'notifications', 'settings'].includes(currentNavigation?.id ?? '') ? 'p-4 sm:p-6 lg:p-8' : ''}>
+          <p role="note" className="mx-4 mt-4 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800 sm:mx-6">
+            O estoque e as demais telas operacionais ainda usam dados de demonstração.
+          </p>
           <Routes>
             <Route index element={dashboard ? <Dashboard data={dashboard} /> : <LoadingState />} />
             <Route path="products" element={<ProductsPage />} />
@@ -291,7 +292,7 @@ function Dashboard({ data }: { data: DashboardData }) {
         <p className="text-sm font-medium text-brand-600">Visão geral</p>
 
         <h2 className="mt-1 text-2xl font-bold tracking-tight text-ink-900">
-          Olá, administrador 👋
+          Olá 👋
         </h2>
 
         <p className="mt-1 text-sm text-ink-500">
