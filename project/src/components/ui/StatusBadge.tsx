@@ -12,7 +12,7 @@ const statusConfig: Record<ExpirationStatus, { dot: string; bg: string; text: st
   expired: { dot: 'bg-error-500', bg: 'bg-error-50', text: 'text-error-700', border: 'border-error-200' },
   critical: { dot: 'bg-orange-500', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
   warning: { dot: 'bg-warning-500', bg: 'bg-warning-50', text: 'text-warning-700', border: 'border-warning-200' },
-  soon: { dot: 'bg-brand-500', bg: 'bg-brand-50', text: 'text-brand-700', border: 'border-brand-200' },
+  uncontrolled: { dot: 'bg-ink-400', bg: 'bg-ink-50', text: 'text-ink-600', border: 'border-ink-200' },
   normal: { dot: 'bg-success-500', bg: 'bg-success-50', text: 'text-success-700', border: 'border-success-200' },
 };
 

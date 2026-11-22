@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { productService, entryService } from '@/services';
+import { dateKey } from '@/utils/format';
 import type { Product } from '@/types';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { ArrowLeft, Check, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 
 export function NewEntryPage() {
   const navigate = useNavigate();
@@ -18,27 +19,36 @@ export function NewEntryPage() {
   const [purchasePrice, setPurchasePrice] = useState('');
   const [loaded, setLoaded] = useState(false);
 
-  useState(() => {
+  const [error, setError] = useState('');
+  const expirationControl = products.find((product) => product.id === productId)?.hasExpirationControl;
+
+  useEffect(() => {
     productService.getProducts().then((p) => {
       setProducts(p);
       setLoaded(true);
     });
-  });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!productId || !quantity || !lotNumber) return;
     setLoading(true);
-    await entryService.createEntry({
-      productId,
-      lotId: `l${Date.now()}`,
-      quantity: parseInt(quantity),
-      lotNumber,
-      expirationDate: expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-      entryDate: new Date().toISOString(),
-      purchasePrice: parseFloat(purchasePrice.replace(',', '.')) || 0,
-    });
-    setLoading(false);
+    setError('');
+    try {
+      await entryService.createEntry({
+        productId,
+        quantity: Number(quantity),
+        lotNumber,
+        expirationDate: expirationControl === false ? undefined : expirationDate || undefined,
+        entryDate: dateKey(new Date())!,
+        purchasePrice: purchasePrice ? Number(purchasePrice.replace(/\./g, '').replace(',', '.')) : 0,
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Não foi possível registrar a entrada.');
+      return;
+    } finally {
+      setLoading(false);
+    }
     setSuccess(true);
     setTimeout(() => navigate('/entries'), 1500);
   }
@@ -59,6 +69,7 @@ export function NewEntryPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-2xl mx-auto">
+      {error && <p role="alert" className="mb-4 text-sm text-error-700">{error}</p>}
       <PageHeader title="Nova entrada" description="Registre uma entrada de estoque">
         <button onClick={() => navigate('/entries')} className="btn-secondary">
           <ArrowLeft className="w-4 h-4" />
@@ -69,7 +80,7 @@ export function NewEntryPage() {
       <form onSubmit={handleSubmit} className="card p-6 space-y-4">
         <div>
           <label className="block text-sm font-medium text-ink-700 mb-1.5">Produto *</label>
-          <select value={productId} onChange={(e) => setProductId(e.target.value)} className="input-field">
+          <select value={productId} onChange={(e) => { setProductId(e.target.value); setExpirationDate(''); }} className="input-field">
             <option value="">Selecione um produto</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
@@ -86,7 +97,7 @@ export function NewEntryPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-ink-700 mb-1.5">Validade</label>
-          <input type="date" value={expirationDate} onChange={(e) => setExpirationDate(e.target.value)} className="input-field" />
+          <input type="date" disabled={expirationControl === false} required={expirationControl === true} value={expirationControl === false ? '' : expirationDate} onChange={(e) => setExpirationDate(e.target.value)} className="input-field" />
         </div>
         <div>
           <label className="block text-sm font-medium text-ink-700 mb-1.5">Preço de compra</label>

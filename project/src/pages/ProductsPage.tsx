@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { productService, lotService } from '@/services';
-import type { Product, ProductLot } from '@/types';
+import type { ProductWithStock, ProductLot } from '@/types';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { FilterDropdown } from '@/components/ui/FilterDropdown';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatDate, getExpirationStatus, daysUntil } from '@/utils/format';
+import { formatDate, getExpirationStatus } from '@/utils/format';
+import { getNextExpiration } from '@/utils/lots';
 import { Plus, Package, Eye, ScanLine, ChevronRight } from 'lucide-react';
 import { BarcodeScannerModal } from '@/components/features/BarcodeScannerModal';
 
 export function ProductsPage() {
   const navigate = useNavigate();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductWithStock[]>([]);
   const [lots, setLots] = useState<ProductLot[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -36,18 +37,8 @@ export function ProductsPage() {
     return lots.filter((l) => l.productId === productId);
   }
 
-  function getNextExpiration(productId: string): ProductLot | null {
-    return getProductLots(productId)
-      .filter((l) => daysUntil(l.expirationDate) >= 0)
-      .sort((a, b) => daysUntil(a.expirationDate) - daysUntil(b.expirationDate))[0] || null;
-  }
-
-  function getProductStatus(productId: string): 'expired' | 'critical' | 'warning' | 'normal' {
-    const productLots = getProductLots(productId);
-    if (productLots.some((l) => daysUntil(l.expirationDate) < 0)) return 'expired';
-    if (productLots.some((l) => daysUntil(l.expirationDate) <= 7)) return 'critical';
-    if (productLots.some((l) => daysUntil(l.expirationDate) <= 30)) return 'warning';
-    return 'normal';
+  function getProductStatus(productId: string) {
+    return getExpirationStatus(getNextExpiration(getProductLots(productId)));
   }
 
   const filtered = products.filter((p) => {
@@ -94,6 +85,7 @@ export function ProductsPage() {
             { value: 'critical', label: 'Crítico' },
             { value: 'warning', label: 'Atenção' },
             { value: 'normal', label: 'Normal' },
+            { value: 'uncontrolled', label: 'Validade não controlada' },
           ]}
         />
       </div>
@@ -125,7 +117,7 @@ export function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-ink-100">
                 {filtered.map((p) => {
-                  const nextExp = getNextExpiration(p.id);
+                  const nextExp = getNextExpiration(getProductLots(p.id));
                   const status = getProductStatus(p.id);
                   const lotCount = getProductLots(p.id).length;
                   return (
@@ -135,7 +127,7 @@ export function ProductsPage() {
                       <td className="px-5 py-3 text-ink-600">{p.category}</td>
                       <td className="px-5 py-3 text-right text-ink-600">{p.totalStock} {p.unit === 'pacote' ? 'un' : p.unit === 'unidade' ? 'un' : p.unit}</td>
                       <td className="px-5 py-3 text-center text-ink-600">{lotCount} {lotCount === 1 ? 'lote' : 'lotes'}</td>
-                      <td className="px-5 py-3 text-ink-600">{nextExp ? formatDate(nextExp.expirationDate) : '—'}</td>
+                      <td className="px-5 py-3 text-ink-600">{formatDate(nextExp)}</td>
                       <td className="px-5 py-3">
                         <StatusBadge status={status} size="sm" />
                       </td>
@@ -159,7 +151,7 @@ export function ProductsPage() {
           {/* Mobile cards */}
           <div className="lg:hidden divide-y divide-ink-100">
             {filtered.map((p) => {
-              const nextExp = getNextExpiration(p.id);
+              const nextExp = getNextExpiration(getProductLots(p.id));
               const status = getProductStatus(p.id);
               const lotCount = getProductLots(p.id).length;
               return (
@@ -173,7 +165,7 @@ export function ProductsPage() {
                   </div>
                   <div className="flex items-center justify-between text-xs text-ink-500">
                     <span>{p.totalStock} unidades • {lotCount} lotes</span>
-                    <span>{nextExp ? formatDate(nextExp.expirationDate) : '—'}</span>
+                    <span>{formatDate(nextExp)}</span>
                   </div>
                 </div>
               );

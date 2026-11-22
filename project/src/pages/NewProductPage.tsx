@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productService, lotService, aiProductService } from '@/services';
+import { productService, aiProductService } from '@/services';
+import { dateKey } from '@/utils/format';
 import type { Unit } from '@/types';
 import { PageHeader } from '@/components/layouts/PageHeader';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
@@ -25,6 +26,8 @@ export function NewProductPage() {
   const [barcode, setBarcode] = useState('');
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
+  const [hasExpirationControl, setHasExpirationControl] = useState(true);
+  const [error, setError] = useState('');
   const [unit, setUnit] = useState<Unit>('unidade');
   const [lots, setLots] = useState<LotFormItem[]>([
     { lotNumber: '', quantity: '', expirationDate: '', purchasePrice: '' },
@@ -57,29 +60,25 @@ export function NewProductPage() {
 
   async function handleSave() {
     setSaving(true);
-    const product = await productService.createProduct({
-      name,
-      barcode,
-      category,
-      brand,
-      unit,
-    });
-
-    for (const lot of lots) {
-      if (lot.lotNumber && lot.quantity) {
-        await lotService.createLot({
-          productId: product.id,
+    setError('');
+    try {
+      const initialLots = lots
+        .filter((lot) => lot.lotNumber || lot.quantity || (hasExpirationControl && lot.expirationDate) || lot.purchasePrice)
+        .map((lot) => ({
           lotNumber: lot.lotNumber,
-          initialQuantity: parseInt(lot.quantity),
-          currentQuantity: parseInt(lot.quantity),
-          entryDate: new Date().toISOString(),
-          expirationDate: lot.expirationDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-          purchasePrice: parseFloat(lot.purchasePrice.replace(',', '.')) || 0,
-        });
-      }
+          initialQuantity: lot.quantity ? Number(lot.quantity) : NaN,
+          currentQuantity: lot.quantity ? Number(lot.quantity) : NaN,
+          entryDate: dateKey(new Date())!,
+          expirationDate: hasExpirationControl ? lot.expirationDate || undefined : undefined,
+          purchasePrice: lot.purchasePrice ? Number(lot.purchasePrice.replace(/\./g, '').replace(',', '.')) : 0,
+        }));
+      await productService.createProduct({ name, barcode, category, brand, unit, hasExpirationControl }, initialLots);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Não foi possível cadastrar o produto.');
+      return;
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
     setSuccess(true);
     setTimeout(() => navigate('/products'), 1500);
   }
@@ -98,6 +97,7 @@ export function NewProductPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-3xl mx-auto">
+      {error && <p role="alert" className="mb-4 text-sm text-error-700">{error}</p>}
       <PageHeader title="Novo produto" description="Cadastre um produto e seus lotes">
         <button onClick={() => navigate('/products')} className="btn-secondary">
           <ArrowLeft className="w-4 h-4" />
@@ -199,6 +199,10 @@ export function NewProductPage() {
             </button>
           </div>
 
+          <label className="flex items-center gap-2 text-sm mb-4">
+            <input type="checkbox" checked={hasExpirationControl} onChange={(event) => setHasExpirationControl(event.target.checked)} />
+            Controlar validade deste produto
+          </label>
           {lots.map((lot, index) => (
             <div key={index} className="rounded-xl border border-ink-200 p-4 space-y-3 bg-ink-50/50">
               <div className="flex items-center justify-between">
@@ -220,7 +224,7 @@ export function NewProductPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-ink-600 mb-1">Validade</label>
-                  <input type="date" value={lot.expirationDate} onChange={(e) => updateLot(index, 'expirationDate', e.target.value)} className="input-field" />
+                  <input disabled={!hasExpirationControl} type="date" value={hasExpirationControl ? lot.expirationDate : ''} onChange={(e) => updateLot(index, 'expirationDate', e.target.value)} className="input-field" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-ink-600 mb-1">Preço de compra</label>

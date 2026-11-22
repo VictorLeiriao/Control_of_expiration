@@ -1,3 +1,4 @@
+import { dateKey } from '@/utils/format';
 import type { Product, ProductLot, Entry, Notification, Company, User, ActionRecord, LossRecord } from '@/types';
 
 export const mockCompany: Company = {
@@ -18,24 +19,24 @@ export const mockUser: User = {
 };
 
 export const mockProducts: Product[] = [
-  { id: 'p1', name: 'Ração Golden 15kg', barcode: '789000000001', category: 'Ração', brand: 'Golden', unit: 'pacote', totalStock: 32, createdAt: '2026-01-20T10:00:00Z' },
-  { id: 'p2', name: 'Ração Premier 15kg', barcode: '789000000002', category: 'Ração', brand: 'Premier', unit: 'pacote', totalStock: 24, createdAt: '2026-02-01T10:00:00Z' },
-  { id: 'p3', name: 'Ração Pedigree 10kg', barcode: '789000000003', category: 'Ração', brand: 'Pedigree', unit: 'pacote', totalStock: 18, createdAt: '2026-02-10T10:00:00Z' },
-  { id: 'p4', name: 'Petisco Premier', barcode: '789000000004', category: 'Petisco', brand: 'Premier', unit: 'unidade', totalStock: 45, createdAt: '2026-02-15T10:00:00Z' },
-  { id: 'p5', name: 'Areia Higiênica', barcode: '789000000005', category: 'Higiene', brand: 'Mega Clean', unit: 'pacote', totalStock: 60, createdAt: '2026-03-01T10:00:00Z' },
-  { id: 'p6', name: 'Shampoo Pet', barcode: '789000000006', category: 'Higiene', brand: 'Sanol Dog', unit: 'unidade', totalStock: 28, createdAt: '2026-03-05T10:00:00Z' },
-  { id: 'p7', name: 'Sachê Whiskas', barcode: '789000000007', category: 'Alimento', brand: 'Whiskas', unit: 'unidade', totalStock: 120, createdAt: '2026-03-10T10:00:00Z' },
-  { id: 'p8', name: 'Ração Whiskas 3kg', barcode: '789000000008', category: 'Ração', brand: 'Whiskas', unit: 'pacote', totalStock: 15, createdAt: '2026-03-15T10:00:00Z' },
-  { id: 'p9', name: 'Antipulgas Frontline', barcode: '789000000009', category: 'Medicamento', brand: 'Frontline', unit: 'unidade', totalStock: 22, createdAt: '2026-03-20T10:00:00Z' },
-  { id: 'p10', name: 'Coleira de Segurança', barcode: '789000000010', category: 'Acessório', brand: 'Pet Safe', unit: 'unidade', totalStock: 35, createdAt: '2026-04-01T10:00:00Z' },
-  { id: 'p11', name: 'Brinquedo Mordedor', barcode: '789000000011', category: 'Brinquedo', brand: 'Pet Fun', unit: 'unidade', totalStock: 50, createdAt: '2026-04-05T10:00:00Z' },
-  { id: 'p12', name: 'Ração Special Dog 20kg', barcode: '789000000012', category: 'Ração', brand: 'Special Dog', unit: 'pacote', totalStock: 10, createdAt: '2026-04-10T10:00:00Z' },
+  { id: 'p1', name: 'Ração Golden 15kg', barcode: '789000000001', category: 'Ração', brand: 'Golden', unit: 'pacote', createdAt: '2026-01-20T10:00:00Z' },
+  { id: 'p2', name: 'Ração Premier 15kg', barcode: '789000000002', category: 'Ração', brand: 'Premier', unit: 'pacote', createdAt: '2026-02-01T10:00:00Z' },
+  { id: 'p3', name: 'Ração Pedigree 10kg', barcode: '789000000003', category: 'Ração', brand: 'Pedigree', unit: 'pacote', createdAt: '2026-02-10T10:00:00Z' },
+  { id: 'p4', name: 'Petisco Premier', barcode: '789000000004', category: 'Petisco', brand: 'Premier', unit: 'unidade', createdAt: '2026-02-15T10:00:00Z' },
+  { id: 'p5', name: 'Areia Higiênica', barcode: '789000000005', category: 'Higiene', brand: 'Mega Clean', unit: 'pacote', createdAt: '2026-03-01T10:00:00Z' },
+  { id: 'p6', name: 'Shampoo Pet', barcode: '789000000006', category: 'Higiene', brand: 'Sanol Dog', unit: 'unidade', createdAt: '2026-03-05T10:00:00Z' },
+  { id: 'p7', name: 'Sachê Whiskas', barcode: '789000000007', category: 'Alimento', brand: 'Whiskas', unit: 'unidade', createdAt: '2026-03-10T10:00:00Z' },
+  { id: 'p8', name: 'Ração Whiskas 3kg', barcode: '789000000008', category: 'Ração', brand: 'Whiskas', unit: 'pacote', createdAt: '2026-03-15T10:00:00Z' },
+  { id: 'p9', name: 'Antipulgas Frontline', barcode: '789000000009', category: 'Medicamento', brand: 'Frontline', unit: 'unidade', createdAt: '2026-03-20T10:00:00Z' },
+  { id: 'p10', name: 'Coleira de Segurança', barcode: '789000000010', category: 'Acessório', brand: 'Pet Safe', unit: 'unidade', createdAt: '2026-04-01T10:00:00Z' },
+  { id: 'p11', name: 'Brinquedo Mordedor', barcode: '789000000011', category: 'Brinquedo', brand: 'Pet Fun', unit: 'unidade', createdAt: '2026-04-05T10:00:00Z' },
+  { id: 'p12', name: 'Ração Special Dog 20kg', barcode: '789000000012', category: 'Ração', brand: 'Special Dog', unit: 'pacote', createdAt: '2026-04-10T10:00:00Z' },
 ];
 
 function daysFromNow(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString();
+  return dateKey(d)!;
 }
 
 export const mockLots: ProductLot[] = [
@@ -77,7 +78,7 @@ export const mockLots: ProductLot[] = [
   { id: 'l19', productId: 'p9', lotNumber: 'FRO002', initialQuantity: 15, currentQuantity: 12, entryDate: '2026-08-28T10:00:00Z', expirationDate: daysFromNow(365), purchasePrice: 56, createdAt: '2026-08-28T10:00:00Z' },
 
   // Coleira de Segurança - p10
-  { id: 'l20', productId: 'p10', lotNumber: 'COL001', initialQuantity: 25, currentQuantity: 20, entryDate: '2026-06-15T10:00:00Z', expirationDate: daysFromNow(500), purchasePrice: 30, createdAt: '2026-06-15T10:00:00Z' },
+  { id: 'l20', productId: 'p10', lotNumber: 'COL001', initialQuantity: 25, currentQuantity: 20, entryDate: '2026-06-15T10:00:00Z', purchasePrice: 30, createdAt: '2026-06-15T10:00:00Z' },
 
   // Brinquedo Mordedor - p11
   { id: 'l21', productId: 'p11', lotNumber: 'BRI001', initialQuantity: 30, currentQuantity: 25, entryDate: '2026-07-01T10:00:00Z', expirationDate: daysFromNow(720), purchasePrice: 15, createdAt: '2026-07-01T10:00:00Z' },

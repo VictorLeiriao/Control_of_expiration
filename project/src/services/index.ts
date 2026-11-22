@@ -1,15 +1,75 @@
 import { mockProducts, mockLots, mockEntries, mockNotifications, mockCompany, mockUser, mockActions, mockLosses } from '@/mocks';
-import type { Product, ProductLot, Entry, Notification, Company, User, ActionRecord, LossRecord, DashboardSummary, DashboardAlert, CriticalProduct, ReportSummary, PromotionData } from '@/types';
-import { daysUntil, getExpirationStatus } from '@/utils/format';
+import type { Product, ProductWithStock, ProductLot, Entry, Notification, Company, User, ActionRecord, LossRecord, DashboardSummary, DashboardAlert, CriticalProduct, ReportSummary, PromotionData } from '@/types';
+import { dateKey, daysUntil, getExpirationStatus } from '@/utils/format';
+
+import { calculateLotInventoryValue, calculateStock, compareLots, getFefoPriority } from '@/utils/lots';
+
+type LotInput = Omit<ProductLot, 'id' | 'createdAt'>;
+type LotUpdate = Omit<LotInput, 'productId'>;
+
+function withStock(product: Product): ProductWithStock {
+  return { ...product, totalStock: calculateStock(mockLots.filter((lot) => lot.productId === product.id)) };
+}
+
+function validateLot(data: LotInput, product = mockProducts.find((item) => item.id === data.productId)): LotInput {
+  if (!product) throw new Error('Produto não encontrado.');
+  const lotNumber = data.lotNumber.trim();
+  if (!lotNumber) throw new Error('Informe a identificação do lote.');
+  if ([data.initialQuantity, data.currentQuantity, data.purchasePrice].some((value) => !Number.isFinite(value) || value < 0)) {
+    throw new Error('Informe quantidades e preço de compra válidos e não negativos.');
+  }
+  const entryDate = dateKey(data.entryDate);
+  if (!entryDate) throw new Error('Informe uma data de entrada válida.');
+  const expirationDate = dateKey(data.expirationDate);
+  if ((data.expirationDate || product.hasExpirationControl === true) && !expirationDate) {
+    throw new Error('Informe uma data de validade válida.');
+  }
+  if (product.hasExpirationControl === false && expirationDate) {
+    throw new Error('Este produto não possui controle de validade.');
+  }
+  return { ...data, lotNumber, entryDate, expirationDate };
+}
+
+function addLot(data: LotInput): ProductLot {
+  const lot = { ...validateLot(data), id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+  mockLots.push(lot);
+  return lot;
+}
+
+export interface ExpirationLot extends CriticalProduct {
+  isFefo: boolean;
+}
+
+function getExpirationRows(): ExpirationLot[] {
+  const today = new Date();
+  const lotsByProduct = new Map<string, ProductLot[]>();
+  for (const lot of mockLots) {
+    const lots = lotsByProduct.get(lot.productId) ?? [];
+    lots.push(lot);
+    lotsByProduct.set(lot.productId, lots);
+  }
+  return mockProducts.flatMap((product) => {
+    const lots = lotsByProduct.get(product.id) ?? [];
+    const priority = getFefoPriority(lots, today);
+    return lots.map((lot) => ({
+      lot,
+      product,
+      daysRemaining: daysUntil(lot.expirationDate, today),
+      riskValue: calculateLotInventoryValue(lot),
+      status: getExpirationStatus(lot.expirationDate, today),
+      isFefo: lot.id === priority?.id,
+    }));
+  }).sort((a, b) => compareLots(a.lot, b.lot));
+}
 
 function delay(ms: number = 300): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export const productService = {
-  async getProducts(): Promise<Product[]> {
+  async getProducts(): Promise<ProductWithStock[]> {
     await delay();
-    return [...mockProducts];
+    return mockProducts.map(withStock);
   },
 
   async getProductById(id: string): Promise<Product | null> {
@@ -17,15 +77,23 @@ export const productService = {
     return mockProducts.find((p) => p.id === id) || null;
   },
 
-  async createProduct(data: Omit<Product, 'id' | 'createdAt' | 'totalStock'>): Promise<Product> {
+  async createProduct(
+    data: Omit<Product, 'id' | 'createdAt'>,
+    initialLots: LotUpdate[] = [],
+  ): Promise<Product> {
     await delay(500);
     const product: Product = {
       ...data,
-      id: `p${Date.now()}`,
-      totalStock: 0,
+      id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     };
+    const lots = initialLots.map((lot) => ({
+      ...validateLot({ ...lot, productId: product.id }, product),
+      id: crypto.randomUUID(),
+      createdAt: product.createdAt,
+    }));
     mockProducts.push(product);
+    mockLots.push(...lots);
     return product;
   },
 
@@ -54,20 +122,35 @@ export const lotService = {
     return mockLots.find((l) => l.id === id) || null;
   },
 
-  async getLotsByProductId(productId: string): Promise<ProductLot[]> {
+  async getLotsByProduct(productId: string): Promise<ProductLot[]> {
     await delay(200);
     return mockLots.filter((l) => l.productId === productId);
   },
 
-  async createLot(data: Omit<ProductLot, 'id' | 'createdAt'>): Promise<ProductLot> {
+  async createLot(data: LotInput): Promise<ProductLot> {
     await delay(500);
-    const lot: ProductLot = {
-      ...data,
-      id: `l${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
-    mockLots.push(lot);
-    return lot;
+    return addLot(data);
+  },
+
+  async updateLot(id: string, data: LotUpdate): Promise<ProductLot> {
+    await delay(400);
+    const index = mockLots.findIndex((lot) => lot.id === id);
+    if (index === -1) throw new Error('Lote não encontrado.');
+    const existing = mockLots[index];
+    const updated = { ...existing, ...validateLot({ ...data, productId: existing.productId }) };
+    mockLots[index] = updated;
+    return updated;
+  },
+
+  async deleteLot(id: string): Promise<void> {
+    await delay(400);
+    const index = mockLots.findIndex((lot) => lot.id === id);
+    if (index === -1) throw new Error('Lote não encontrado.');
+    if (mockEntries.some((entry) => entry.lotId === id && entry.status === 'confirmed')
+      || mockActions.some((action) => action.lotId === id)) {
+      throw new Error('Este lote possui histórico de movimentação e não pode ser exclu?do.');
+    }
+    mockLots.splice(index, 1);
   },
 };
 
@@ -77,11 +160,25 @@ export const entryService = {
     return [...mockEntries];
   },
 
-  async createEntry(data: Omit<Entry, 'id' | 'status'>): Promise<Entry> {
+  async createEntry(data: Omit<Entry, 'id' | 'status' | 'lotId'>): Promise<Entry> {
     await delay(500);
+    if (!Number.isFinite(data.quantity) || data.quantity <= 0) throw new Error('Informe uma quantidade maior que zero.');
+    const lot = addLot({
+      productId: data.productId,
+      lotNumber: data.lotNumber,
+      entryDate: data.entryDate,
+      expirationDate: data.expirationDate,
+      initialQuantity: data.quantity,
+      currentQuantity: data.quantity,
+      purchasePrice: data.purchasePrice,
+    });
     const entry: Entry = {
       ...data,
-      id: `e${Date.now()}`,
+      id: crypto.randomUUID(),
+      lotId: lot.id,
+      lotNumber: lot.lotNumber,
+      entryDate: lot.entryDate,
+      expirationDate: lot.expirationDate,
       status: 'confirmed',
     };
     mockEntries.push(entry);
@@ -90,46 +187,27 @@ export const entryService = {
 };
 
 export const expirationService = {
-  async getExpiringProducts(days: number = 30): Promise<CriticalProduct[]> {
+  getExpirationStatus,
+  getDaysUntilExpiration: daysUntil,
+
+  async getLots(): Promise<ExpirationLot[]> {
     await delay();
-    const result: CriticalProduct[] = [];
-    for (const lot of mockLots) {
-      const daysRem = daysUntil(lot.expirationDate);
-      if (daysRem <= days) {
-        const product = mockProducts.find((p) => p.id === lot.productId);
-        if (product) {
-          result.push({
-            lot,
-            product,
-            daysRemaining: daysRem,
-            riskValue: lot.currentQuantity * lot.purchasePrice,
-            status: getExpirationStatus(lot.expirationDate),
-          });
-        }
-      }
-    }
-    return result.sort((a, b) => a.daysRemaining - b.daysRemaining);
+    return getExpirationRows();
   },
 
-  async getExpiredProducts(): Promise<CriticalProduct[]> {
-    await delay();
-    const result: CriticalProduct[] = [];
-    for (const lot of mockLots) {
-      const daysRem = daysUntil(lot.expirationDate);
-      if (daysRem < 0) {
-        const product = mockProducts.find((p) => p.id === lot.productId);
-        if (product) {
-          result.push({
-            lot,
-            product,
-            daysRemaining: daysRem,
-            riskValue: lot.currentQuantity * lot.purchasePrice,
-            status: 'expired',
-          });
-        }
-      }
-    }
-    return result.sort((a, b) => a.daysRemaining - b.daysRemaining);
+  async getExpiringLots(days = 30): Promise<ExpirationLot[]> {
+    return (await this.getLots()).filter((item) =>
+      item.lot.currentQuantity > 0 && Number.isFinite(item.daysRemaining)
+      && item.daysRemaining >= 0 && item.daysRemaining <= days,
+    );
+  },
+
+  async getExpiredLots(): Promise<ExpirationLot[]> {
+    return (await this.getLots()).filter((item) => item.lot.currentQuantity > 0 && item.status === 'expired');
+  },
+
+  async getCriticalLots(): Promise<ExpirationLot[]> {
+    return this.getExpiringLots(7);
   },
 };
 
@@ -154,40 +232,18 @@ export const notificationService = {
 export const dashboardService = {
   async getDashboard(): Promise<{ summary: DashboardSummary; criticalProducts: CriticalProduct[]; alerts: DashboardAlert[] }> {
     await delay();
-    let expiredCount = 0;
-    let expiring7Days = 0;
-    let expiring30Days = 0;
-    let riskValue = 0;
-    const criticalProducts: CriticalProduct[] = [];
-
-    for (const lot of mockLots) {
-      const days = daysUntil(lot.expirationDate);
-      const product = mockProducts.find((p) => p.id === lot.productId);
-      if (!product) continue;
-
-      const riskVal = lot.currentQuantity * lot.purchasePrice;
-      const critical: CriticalProduct = {
-        lot,
-        product,
-        daysRemaining: days,
-        riskValue: riskVal,
-        status: getExpirationStatus(lot.expirationDate),
-      };
-
-      if (days < 0) {
-        expiredCount++;
-      } else if (days <= 7) {
-        expiring7Days++;
-        riskValue += riskVal;
-        criticalProducts.push(critical);
-      } else if (days <= 30) {
-        expiring30Days++;
-        riskValue += riskVal;
-        criticalProducts.push(critical);
-      }
-    }
-
-    criticalProducts.sort((a, b) => a.daysRemaining - b.daysRemaining);
+    const activeLots = getExpirationRows().filter((item) => item.lot.currentQuantity > 0);
+    const expiredCount = activeLots.filter((item) => item.status === 'expired').length;
+    const expiring7Days = activeLots.filter((item) => item.status === 'critical').length;
+    const expiring30Days = activeLots.filter((item) => item.status === 'warning').length;
+    const atRisk = activeLots.filter((item) => item.status === 'critical' || item.status === 'warning');
+    const riskValue = atRisk.reduce((sum, item) => sum + item.riskValue, 0);
+    const seenProducts = new Set<string>();
+    const criticalProducts = atRisk.filter(({ product }) => {
+      if (seenProducts.has(product.id)) return false;
+      seenProducts.add(product.id);
+      return true;
+    });
 
     const summary: DashboardSummary = {
       expiredCount,
@@ -195,7 +251,7 @@ export const dashboardService = {
       expiring30Days,
       riskValue,
       totalProducts: mockProducts.length,
-      totalUnits: mockProducts.reduce((sum, p) => sum + p.totalStock, 0),
+      totalUnits: calculateStock(mockLots),
       totalLots: mockLots.length,
     };
 
@@ -204,9 +260,9 @@ export const dashboardService = {
         id: 'alert-1',
         level: 'critical',
         title: 'ATENÇÃO',
-        message: `${expiring7Days} produtos vencem nos próximos 7 dias.`,
+        message: `${expiring7Days} lotes vencem nos próximos 7 dias.`,
         actionLabel: 'Ver produtos',
-        actionLink: '/expirations',
+        actionLink: '/expirations?status=critical&stock=available',
         dismissed: false,
       },
       {
@@ -215,7 +271,7 @@ export const dashboardService = {
         title: 'ESTOQUE EM RISCO',
         message: `${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(riskValue)} em produtos próximos do vencimento.`,
         actionLabel: 'Ver detalhes',
-        actionLink: '/expirations',
+        actionLink: '/expirations?period=30&stock=available',
         dismissed: false,
       },
     ];
@@ -257,7 +313,7 @@ export const assistantService = {
       const expiring = mockLots
         .filter((l) => {
           const d = daysUntil(l.expirationDate);
-          return d >= 0;
+          return Number.isFinite(d) && d >= 0;
         })
         .sort((a, b) => daysUntil(a.expirationDate) - daysUntil(b.expirationDate))
         .slice(0, 3);

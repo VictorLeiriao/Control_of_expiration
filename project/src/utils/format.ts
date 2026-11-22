@@ -1,6 +1,8 @@
 import type { ExpirationStatus } from '@/types';
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date?: string | Date): string {
+  if (!date) return '—';
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date.split('-').reverse().join('/');
   const d = typeof date === 'string' ? new Date(date) : date;
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -27,21 +29,34 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('pt-BR').format(value);
 }
 
-export function daysUntil(date: string | Date): number {
-  const target = typeof date === 'string' ? new Date(date) : date;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
-  const diff = target.getTime() - now.getTime();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+export function dateKey(date?: string | Date): string | undefined {
+  if (!date) return undefined;
+  if (typeof date === 'string') {
+    const key = date.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return undefined;
+    const parsed = new Date(key);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key ? key : undefined;
+  }
+  if (!Number.isFinite(date.getTime())) return undefined;
+  return [
+    String(date.getFullYear()).padStart(4, '0'),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
-export function getExpirationStatus(expirationDate: string | Date): ExpirationStatus {
-  const days = daysUntil(expirationDate);
+export function daysUntil(date?: string | Date, today = new Date()): number {
+  const key = dateKey(date);
+  if (!key) return Infinity;
+  return (Date.parse(key) - Date.parse(dateKey(today)!)) / 86_400_000;
+}
+
+export function getExpirationStatus(expirationDate?: string | Date, today = new Date()): ExpirationStatus {
+  const days = daysUntil(expirationDate, today);
+  if (!Number.isFinite(days)) return 'uncontrolled';
   if (days < 0) return 'expired';
   if (days <= 7) return 'critical';
   if (days <= 30) return 'warning';
-  if (days <= 60) return 'soon';
   return 'normal';
 }
 
@@ -53,18 +68,19 @@ export function getExpirationLabel(status: ExpirationStatus): string {
       return 'Crítico';
     case 'warning':
       return 'Atenção';
-    case 'soon':
-      return 'Em breve';
+    case 'uncontrolled':
+      return 'Validade não controlada';
     case 'normal':
       return 'Normal';
   }
 }
 
 export function getDaysRemainingLabel(days: number): string {
+  if (!Number.isFinite(days)) return 'Validade não controlada';
   if (days < 0) return `Vencido há ${Math.abs(days)} ${Math.abs(days) === 1 ? 'dia' : 'dias'}`;
   if (days === 0) return 'Vence hoje';
-  if (days === 1) return '1 dia restante';
-  return `${days} dias restantes`;
+  if (days === 1) return 'Vence em 1 dia';
+  return `Vence em ${days} dias`;
 }
 
 export function getGreeting(): string {

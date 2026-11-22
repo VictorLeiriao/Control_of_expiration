@@ -9,9 +9,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ExpirationBadge } from '@/components/ui/ExpirationBadge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { RegisterActionModal } from '@/components/features/RegisterActionModal';
-import { formatCurrency, formatDate, getGreeting, getDaysRemainingLabel } from '@/utils/format';
+import { formatCurrency, formatDate, getGreeting } from '@/utils/format';
 import { AlertTriangle, Clock, CalendarClock, DollarSign, Package, Boxes, Layers, Eye, Zap } from 'lucide-react';
-import type { ActionType } from '@/types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -35,7 +34,7 @@ export function DashboardPage() {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
   }
 
-  function handleActionConfirm(_type: ActionType) {
+  function handleActionConfirm() {
     setActionModal({ open: false, item: null });
   }
 
@@ -70,19 +69,19 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <DashboardCard
           icon={AlertTriangle}
-          label="Produtos vencidos"
+          label="Lotes vencidos"
           value={summary?.expiredCount ?? 0}
           tone="error"
         />
         <DashboardCard
           icon={Clock}
-          label="Vencendo em 7 dias"
+          label="Lotes vencendo em até 7 dias"
           value={summary?.expiring7Days ?? 0}
           tone="warning"
         />
         <DashboardCard
           icon={CalendarClock}
-          label="Vencendo em 30 dias"
+          label="Lotes vencendo de 8 a 30 dias"
           value={summary?.expiring30Days ?? 0}
           tone="brand"
         />
@@ -132,7 +131,7 @@ export function DashboardPage() {
             <h2 className="text-base font-semibold text-ink-900">Produtos que precisam da sua atenção</h2>
             <p className="text-xs text-ink-500 mt-0.5">Ordenados por proximidade do vencimento</p>
           </div>
-          <button onClick={() => navigate('/expirations')} className="btn-ghost text-sm">
+          <button onClick={() => navigate('/expirations?period=30&stock=available')} className="btn-ghost text-sm">
             Ver todas
           </button>
         </div>

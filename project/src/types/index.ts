@@ -2,7 +2,7 @@
 
 export type Unit = 'unidade' | 'kg' | 'g' | 'litro' | 'ml' | 'caixa' | 'pacote';
 
-export type ExpirationStatus = 'expired' | 'critical' | 'warning' | 'soon' | 'normal';
+export type ExpirationStatus = 'expired' | 'critical' | 'warning' | 'uncontrolled' | 'normal';
 
 export type ActionType = 'promotion' | 'return' | 'transfer' | 'sale' | 'discard' | 'other';
 
@@ -46,8 +46,12 @@ export interface Product {
   category: string;
   brand: string;
   unit: Unit;
-  totalStock: number;
+  hasExpirationControl?: boolean;
   createdAt: string;
+}
+
+export interface ProductWithStock extends Product {
+  totalStock: number;
 }
 
 export interface ProductLot {
@@ -57,7 +61,7 @@ export interface ProductLot {
   initialQuantity: number;
   currentQuantity: number;
   entryDate: string;
-  expirationDate: string;
+  expirationDate?: string;
   purchasePrice: number;
   createdAt: string;
 }
@@ -78,7 +82,7 @@ export interface Entry {
   lotId: string;
   quantity: number;
   lotNumber: string;
-  expirationDate: string;
+  expirationDate?: string;
   entryDate: string;
   purchasePrice: number;
   status: 'confirmed' | 'pending';
